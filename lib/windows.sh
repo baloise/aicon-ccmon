@@ -82,7 +82,7 @@ stage_widget() {
   WIDGET_URL=$(gh api "repos/$(repo_slug)/pages" --jq '.html_url' 2>/dev/null)
   [ -n "$WIDGET_URL" ] || WIDGET_URL="http://localhost:${CCMON_PORT:-8787}/"
   WIDGET_EXE="$win_dir_win\\ccmon-widget.exe"
-  WIDGET_ARGS="--snapshot \"$UNC_PATH\\usage-snapshot.json\" --wallboard \"$WIDGET_URL\" --distro \"${WSL_DISTRO_NAME:-}\""
+  WIDGET_ARGS="--snapshot \"$UNC_PATH\\usage-snapshot.json\" --wallboard \"$WIDGET_URL\" --distro \"${WSL_DISTRO_NAME:-}\" --repo \"$CCMON_ROOT\""
 
   widget_launcher "$win_dir_unix"
   widget_autostart

@@ -148,7 +148,7 @@ static class Program {
     static Pen pBorder;
     static Font fLabel, fBig, fSmall;
 
-    static string snapshotPath = "", wallboardUrl = "", distro = "";
+    static string snapshotPath = "", wallboardUrl = "", distro = "", repo = "";
     static int refreshSeconds = 30;
 
     static DesktopForm form;
@@ -178,11 +178,12 @@ static class Program {
             if (args[i] == "--snapshot")  snapshotPath  = args[i + 1];
             if (args[i] == "--wallboard") wallboardUrl  = args[i + 1];
             if (args[i] == "--distro")    distro        = args[i + 1];
+            if (args[i] == "--repo")      repo          = args[i + 1];
             if (args[i] == "--refresh")   int.TryParse(args[i + 1], out refreshSeconds);
         }
         if (snapshotPath.Length == 0) {
-            MessageBox.Show("Usage: ccmon-widget.exe --snapshot <path> [--wallboard <url>] [--distro <name>]",
-                            "ccmon");
+            MessageBox.Show("Usage: ccmon-widget.exe --snapshot <path> "
+                          + "[--wallboard <url>] [--distro <name>] [--repo <wsl path>]", "ccmon");
             return 2;
         }
 
@@ -345,13 +346,14 @@ static class Program {
         miHide.Text = form.Visible ? "Hide widget" : "Show widget";
     }
 
-    static ToolStripMenuItem miHide, miTop;
+    static ToolStripMenuItem miHide, miTop, miUpdate;
 
     static void BuildTray() {
         var menu = new ContextMenuStrip();
         miTop = new ToolStripMenuItem("Bring to front");
         var miBoard = new ToolStripMenuItem("Open wallboard");
         var miRefresh = new ToolStripMenuItem("Refresh now");
+        miUpdate = new ToolStripMenuItem("Update ccmon");
         miHide = new ToolStripMenuItem("Hide widget");
         var miExit = new ToolStripMenuItem("Exit");
 
@@ -361,14 +363,25 @@ static class Program {
             else tray.ShowBalloonTip(4000, "ccmon", "No wallboard URL configured. Run ./ccmon.", ToolTipIcon.Info);
         };
         miRefresh.Click += delegate {
-            if (distro.Length > 0) {
-                var psi = new ProcessStartInfo("wsl.exe",
-                    "-d " + distro + " -- $HOME/.claude/ccmon/usage-poll.sh");
-                psi.WindowStyle = ProcessWindowStyle.Hidden;
-                psi.CreateNoWindow = true;
-                try { Process.Start(psi); } catch { }
-            }
+            RunInWsl("$HOME/.claude/ccmon/usage-poll.sh", null);
             Poll(); form.Invalidate(); UpdateTray();
+        };
+        miUpdate.Click += delegate {
+            if (repo.Length == 0) {
+                tray.ShowBalloonTip(4000, "ccmon", "No repo path configured. Run ./ccmon.", ToolTipIcon.Info);
+                return;
+            }
+            tray.ShowBalloonTip(3000, "ccmon", "Updating - this may restart the widget.", ToolTipIcon.Info);
+            // ccmon update may reinstall and restart this very process, in which
+            // case the completion balloon never fires. That is fine: the widget
+            // coming back is the visible result.
+            RunInWsl("cd " + Quote(repo) + " && ./ccmon update --yes", delegate(int code) {
+                try {
+                    tray.ShowBalloonTip(5000, "ccmon",
+                        code == 0 ? "Update finished." : "Update failed (exit " + code + ").",
+                        code == 0 ? ToolTipIcon.Info : ToolTipIcon.Warning);
+                } catch { }
+            });
         };
         miHide.Click += delegate { ToggleHidden(); };
         miExit.Click += delegate {
@@ -378,7 +391,8 @@ static class Program {
         };
 
         menu.Items.AddRange(new ToolStripItem[] {
-            miTop, miHide, new ToolStripSeparator(), miBoard, miRefresh, new ToolStripSeparator(), miExit });
+            miTop, miHide, new ToolStripSeparator(),
+            miBoard, miRefresh, miUpdate, new ToolStripSeparator(), miExit });
 
         tray = new NotifyIcon();
         tray.ContextMenuStrip = menu;
@@ -389,6 +403,27 @@ static class Program {
             if (e.Button == MouseButtons.Left) ToggleTop();
         };
         UpdateMenuLabels();
+    }
+
+    static string Quote(string s) { return "'" + s.Replace("'", "'\\''") + "'"; }
+
+    // wsl.exe with no console window. onExit, when given, fires on completion.
+    static void RunInWsl(string command, Action<int> onExit) {
+        if (distro.Length == 0) return;
+        var psi = new ProcessStartInfo("wsl.exe", "-d " + distro + " -- bash -lc " + Quote(command));
+        psi.WindowStyle = ProcessWindowStyle.Hidden;
+        psi.CreateNoWindow = true;
+        psi.UseShellExecute = false;
+        try {
+            var proc = new Process { StartInfo = psi, EnableRaisingEvents = onExit != null };
+            if (onExit != null) {
+                proc.Exited += delegate {
+                    int code = proc.ExitCode;
+                    try { form.BeginInvoke((MethodInvoker)delegate { onExit(code); }); } catch { }
+                };
+            }
+            proc.Start();
+        } catch { }
     }
 
     static Icon MakeIcon(double? pct, bool stale) {

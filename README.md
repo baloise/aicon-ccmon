@@ -28,39 +28,56 @@ flowchart LR
 
   subgraph machine["each machine (WSL)"]
     POLL["poller<br/><i>every 5 min</i>"]
-    SNAP[("usage-snapshot.json<br/><i>current reading</i>")]
-    JSONL[("data/HOST.jsonl<br/><i>append-only history</i>")]
+    SNAP[("usage-snapshot.json<br/><i>this machine's last reading</i>")]
+    HIST[("history clone<br/><i>every machine's samples</i>")]
     SYNC["history-sync<br/><i>every 15 min</i>"]
   end
 
   WIDGET["Windows widget"]
   STATUS["Claude Code status line"]
+  CHART["ccmon chart.sh"]
   REPO[("GitHub repo<br/><b>data</b> branch")]
-  PAGES["GitHub Pages"]
+  PAGES["GitHub Pages<br/><i>public</i>"]
   SERVE["ccmon serve"]
   BOARD["wallboard"]
 
   API -->|poll| POLL
-  POLL -->|write| SNAP
-  POLL -->|append| JSONL
-  SNAP -->|read| WIDGET
   API -.->|"own feed"| STATUS
-  JSONL --> SYNC
-  SYNC -->|"push + compact"| REPO
+  POLL -->|write| SNAP
+  POLL -->|"append own file"| HIST
+  SNAP -->|read| WIDGET
+  HIST --> SYNC
+  SYNC -->|"push own file"| REPO
+  REPO -->|"fetch every machine"| SYNC
+  SYNC -->|"merge + rebuild manifest"| HIST
+  HIST -->|read| CHART
+  HIST -->|serve| SERVE
   REPO -->|serve| PAGES
-  REPO -->|clone| SERVE
-  PAGES -->|"needs GitHub sign-in"| BOARD
-  SERVE -->|"no auth"| BOARD
+  PAGES -->|"no auth"| BOARD
+  SERVE -->|"no auth, LAN"| BOARD
 ```
 
 Four moving parts, each with one job:
 
 | Part | Reads | Writes |
 |---|---|---|
-| **poller** | the usage API | the snapshot, and one history line |
-| **widget** | the snapshot | a small always-on-top window |
+| **poller** | the usage API | the snapshot, and one line in *its own* history file |
+| **widget** | the snapshot only — this machine's own last reading | a small panel on the desktop |
 | **repo** | — | the `data` branch, compacted as it grows |
-| **wallboard** | the published data | a screen you can read across a room |
+| **wallboard** | every machine's samples, merged | a screen you can read across a room |
+
+**Sync is two-way.** Each run fetches the `data` branch and hard-resets onto it,
+keeping only this machine's own two files, then rebuilds the manifest from every
+machine's latest reading. So the local clone ends up holding *everyone's*
+samples — which is what `chart.sh`, `ccmon serve` and the wallboard read. One
+file per machine is what makes that safe: no two machines ever write the same
+file, so the pushes cannot conflict.
+
+**The widget is the exception.** It reads only `usage-snapshot.json`, never the
+merged history. That is usually invisible, because the quota is account-wide and
+every machine reports the same numbers — but if *this* machine's poller is backed
+off or its token has expired, the widget shows stale while another machine may
+have pushed fresher figures minutes ago.
 
 The status line is fed by Claude Code itself rather than by ccmon, so it keeps
 working even when the poller is backed off or offline.
