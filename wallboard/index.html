@@ -114,7 +114,7 @@ function hero(label, pct, resetsAt, windowSec, perUnit) {
       ${p.paceNow > 0 && p.paceNow < 100
         ? `<span class="tick" style="left:${p.paceNow}%"></span>` : ''}
     </div>
-    <div class="reset">${resetsAt ? 'resets in ' + CCMON.until(resetsAt) : '&nbsp;'}</div>
+    <div class="reset">${resetsAt ? CCMON.resetPhrase(resetsAt) : '&nbsp;'}</div>
     <div class="rate">${rate}</div>
   </div>`;
 }

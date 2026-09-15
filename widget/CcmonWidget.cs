@@ -108,12 +108,18 @@ class Pace {
         return p;
     }
 
-    public static string Until(long secs) {
-        if (secs <= 60) return "now";
-        long d = secs / 86400, h = secs % 86400 / 3600, m = secs % 3600 / 60;
-        if (d > 0) return d + "d " + h + "h";
-        if (h > 0) return h + "h " + m + "m";
-        return m + "m";
+    // Mirrors resetPhrase() in chart-lib.js. Sub-minute counts down in seconds
+    // rather than collapsing to a useless "now"; once the reset time has passed,
+    // which it can between the rollover and the next poll, it states when.
+    public static string Phrase(long resetsAt) {
+        long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        long d = resetsAt - now;
+        if (d <= 0)
+            return "reset at " + DateTimeOffset.FromUnixTimeSeconds(resetsAt).ToLocalTime().ToString("HH:mm");
+        if (d >= 86400) return string.Format("resets in {0}d {1}h", d / 86400, d % 86400 / 3600);
+        if (d >= 3600)  return string.Format("resets in {0}h {1}m", d / 3600, d % 3600 / 60);
+        if (d >= 60)    return string.Format("resets in {0}m", d / 60);
+        return "resets in " + d + "s";
     }
 }
 
@@ -293,7 +299,7 @@ static class Program {
                 g.FillRectangle(bText, px, barY - 3, 2, 12);
             }
 
-            string when = resets[i] > 0 ? "resets " + Pace.Until(pc.Remaining) : "";
+            string when = resets[i] > 0 ? Pace.Phrase(resets[i]) : "";
             g.DrawString(when, fSmall, bMuted, PAD, barY + 12);
             if (!stale) {
                 SizeF vs = g.MeasureString(pc.Verdict, fSmall);

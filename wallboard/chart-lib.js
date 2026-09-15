@@ -29,14 +29,21 @@ const CCMON = (function () {
     return out;
   }
 
-  // Compact "2h 14m" / "3d 4h" for reset countdowns.
-  function until(epochSeconds) {
-    const d = Math.max(0, epochSeconds - Math.floor(Date.now() / 1000));
-    if (d < 60) return 'now';
-    const days = Math.floor(d / 86400), h = Math.floor(d % 86400 / 3600), m = Math.floor(d % 3600 / 60);
-    if (days) return `${days}d ${h}h`;
-    if (h) return `${h}h ${m}m`;
-    return `${m}m`;
+  // A complete phrase for when a window rolls over. Sub-minute counts down in
+  // seconds rather than collapsing to a useless "now", and once the reset time
+  // has passed - which it can, between the rollover and the next poll - it
+  // states the time it happened instead of pretending something is imminent.
+  function resetPhrase(resetsAtSec, nowSec) {
+    const now = nowSec || Math.floor(Date.now() / 1000);
+    const d = resetsAtSec - now;
+    if (d <= 0) {
+      return 'reset at ' + new Date(resetsAtSec * 1000)
+        .toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
+    }
+    if (d >= 86400) return `resets in ${Math.floor(d / 86400)}d ${Math.floor(d % 86400 / 3600)}h`;
+    if (d >= 3600)  return `resets in ${Math.floor(d / 3600)}h ${Math.floor(d % 3600 / 60)}m`;
+    if (d >= 60)    return `resets in ${Math.floor(d / 60)}m`;
+    return `resets in ${d}s`;
   }
 
   function draw(host, tipEl, series, rows, opts) {
@@ -172,5 +179,5 @@ const CCMON = (function () {
   }
 
   return { GAP, TARGET, WINDOW_5H, WINDOW_7D,
-           segments, fmtDay, fmtFull, until, draw, scopeKey, pace };
+           segments, fmtDay, fmtFull, resetPhrase, draw, scopeKey, pace };
 })();
