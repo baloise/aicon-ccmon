@@ -1,0 +1,7 @@
+[Unit]
+Description=ccmon - push usage samples to the repo data branch
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/.claude/ccmon/history-sync.sh

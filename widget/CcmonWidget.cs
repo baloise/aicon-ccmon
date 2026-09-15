@@ -1,0 +1,436 @@
+// ccmon desktop widget.
+//
+// Built as its own executable rather than hosted by powershell.exe, because
+// Windows keys a tray icon's identity on (executable path + uID). Every
+// PowerShell-hosted icon therefore collides with every other one - on this
+// machine ours hashed to a stale Citrix installer entry - and can never get its
+// own row in Settings > Taskbar, which is what "always show" needs.
+//
+// Reads only the snapshot the WSL poller writes. No credentials, no network.
+//
+// Build: csc /target:winexe /out:ccmon-widget.exe CcmonWidget.cs
+
+using System;
+using System.Diagnostics;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Web.Script.Serialization;
+using System.Windows.Forms;
+
+static class Native {
+    [DllImport("user32.dll")]
+    public static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint f);
+    [DllImport("user32.dll")] public static extern bool DestroyIcon(IntPtr h);
+    static readonly IntPtr BOTTOM = new IntPtr(1), TOPMOST = new IntPtr(-1), NOTOPMOST = new IntPtr(-2);
+    const uint NOSIZE = 0x1, NOMOVE = 0x2, NOACTIVATE = 0x10;
+    public static void Sink(IntPtr h) { SetWindowPos(h, BOTTOM, 0, 0, 0, 0, NOSIZE | NOMOVE | NOACTIVATE); }
+    public static void Lift(IntPtr h) { SetWindowPos(h, TOPMOST, 0, 0, 0, 0, NOSIZE | NOMOVE | NOACTIVATE); }
+    public static void Drop(IntPtr h) { SetWindowPos(h, NOTOPMOST, 0, 0, 0, 0, NOSIZE | NOMOVE | NOACTIVATE); }
+}
+
+class Snapshot {
+    public double? FiveHour, SevenDay;
+    public bool Stale = true;
+    public string Reason = "";
+    public double FetchedAtMs;
+    public long FiveHourResets, SevenDayResets;   // epoch seconds, 0 when absent
+
+    public static Snapshot Read(string path) {
+        var s = new Snapshot();
+        try {
+            string text = File.ReadAllText(path);
+            var d = (System.Collections.Generic.Dictionary<string, object>)
+                    new JavaScriptSerializer().DeserializeObject(text);
+            s.FiveHour = Num(d, "five_hour");
+            s.SevenDay = Num(d, "seven_day");
+            s.Stale = d.ContainsKey("stale") && Convert.ToBoolean(d["stale"]);
+            s.Reason = d.ContainsKey("reason") && d["reason"] != null ? d["reason"].ToString() : "";
+            s.FetchedAtMs = Num(d, "fetchedAtMs") ?? Num(d, "checkedAtMs") ?? 0;
+            s.FiveHourResets = Epoch(d, "five_hour_resets_at");
+            s.SevenDayResets = Epoch(d, "seven_day_resets_at");
+            return s;
+        } catch { return null; }
+    }
+    static long Epoch(System.Collections.Generic.Dictionary<string, object> d, string k) {
+        if (!d.ContainsKey(k) || d[k] == null) return 0;
+        try { return DateTimeOffset.Parse(d[k].ToString()).ToUnixTimeSeconds(); } catch { return 0; }
+    }
+    static double? Num(System.Collections.Generic.Dictionary<string, object> d, string k) {
+        if (!d.ContainsKey(k) || d[k] == null) return null;
+        try { return Convert.ToDouble(d[k]); } catch { return null; }
+    }
+}
+
+// The point of the project: not "how much have I used" but "speed up or slow
+// down to finish this window at TARGET". Mirrors pace() in chart-lib.js - keep
+// the two in step.
+class Pace {
+    public const double TARGET = 95;
+    public long Remaining;
+    public double Elapsed;      // 0..1 through the window
+    public double PaceNow;      // where usage would be if spent evenly
+    public double? Headroom, Factor, PerHour, PerDay;
+    public string Verdict = "no data";
+    public string Tone = "muted";
+
+    public static Pace Of(double? util, long resetsAt, long windowSec) {
+        long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var p = new Pace();
+        if (resetsAt <= 0) return p;
+        p.Remaining = Math.Max(0, resetsAt - now);
+        p.Elapsed = Math.Min(1, Math.Max(0, (windowSec - p.Remaining) / (double)windowSec));
+        p.PaceNow = TARGET * p.Elapsed;
+        if (util == null) return p;
+
+        double u = util.Value;
+        p.Headroom = TARGET - u;
+        if (p.Remaining > 0) {
+            p.PerHour = p.Headroom / (p.Remaining / 3600.0);
+            p.PerDay  = p.Headroom / (p.Remaining / 86400.0);
+        }
+        if (u >= TARGET)      { p.Verdict = "over budget";  p.Tone = "crit"; return p; }
+        if (p.Remaining <= 0) { p.Verdict = "window closed";                 return p; }
+        if (p.Elapsed < 0.05) { p.Verdict = "just reset";                    return p; }
+
+        double rateNow = u / p.Elapsed;
+        double rateNeeded = p.Headroom.Value / Math.Max(1e-6, 1 - p.Elapsed);
+        double f = rateNow > 0 ? rateNeeded / rateNow : double.PositiveInfinity;
+        p.Factor = f;
+
+        // The factor explodes at both ends of a window, so cap what is shown.
+        if (double.IsInfinity(f) || f >= 3) { p.Verdict = "burn freely"; p.Tone = "good"; }
+        else if (f > 1.15)  { p.Verdict = "faster " + f.ToString("0.0") + "x";    p.Tone = "good"; }
+        else if (f >= 0.85) { p.Verdict = "on pace";                              p.Tone = "good"; }
+        else if (f >= 0.5)  { p.Verdict = "ease off " + f.ToString("0.0") + "x";  p.Tone = "warn"; }
+        else                { p.Verdict = "slow down " + f.ToString("0.0") + "x"; p.Tone = "crit"; }
+        return p;
+    }
+
+    public static string Until(long secs) {
+        if (secs <= 60) return "now";
+        long d = secs / 86400, h = secs % 86400 / 3600, m = secs % 3600 / 60;
+        if (d > 0) return d + "d " + h + "h";
+        if (h > 0) return h + "h " + m + "m";
+        return m + "m";
+    }
+}
+
+// Lives on the desktop: never in alt-tab, never takes focus.
+class DesktopForm : Form {
+    protected override CreateParams CreateParams {
+        get {
+            CreateParams cp = base.CreateParams;
+            cp.ExStyle |= 0x00000080;   // WS_EX_TOOLWINDOW
+            cp.ExStyle |= 0x08000000;   // WS_EX_NOACTIVATE
+            return cp;
+        }
+    }
+    protected override bool ShowWithoutActivation { get { return true; } }
+}
+
+static class Program {
+    const int W = 268, H = 190, PAD = 16, RADIUS = 16;
+    const int WINDOW_5H = 5 * 3600, WINDOW_7D = 7 * 86400;
+
+    static readonly Color cSurface = Color.FromArgb(26, 26, 25);
+    static readonly Color cText    = Color.FromArgb(245, 245, 243);
+    static readonly Color cMuted   = Color.FromArgb(143, 142, 134);
+    static readonly Color cTrack   = Color.FromArgb(56, 56, 52);
+    static readonly Color cGood    = Color.FromArgb(25, 158, 112);
+    static readonly Color cWarn    = Color.FromArgb(234, 179, 8);
+    static readonly Color cCrit    = Color.FromArgb(230, 103, 103);
+
+    // Brushes and fonts are created once: rebuilding them per repaint leaks GDI
+    // handles in something meant to run for days.
+    static SolidBrush bText, bMuted, bTrack, bGood, bWarn, bCrit;
+    static Pen pBorder;
+    static Font fLabel, fBig, fSmall;
+
+    static string snapshotPath = "", wallboardUrl = "", distro = "";
+    static int refreshSeconds = 30;
+
+    static DesktopForm form;
+    static NotifyIcon tray;
+    static Timer timer;
+    static Snapshot data;
+    static bool everRead = false;
+    static bool onTop = false;      // false = pinned to the desktop
+    static IntPtr trayHandle = IntPtr.Zero;
+
+    static Brush LevelBrush(double? p, bool stale) {
+        if (stale || p == null) return bMuted;
+        if (p >= 80) return bCrit;
+        if (p >= 50) return bWarn;
+        return bGood;
+    }
+    static Color LevelColor(double? p, bool stale) {
+        if (stale || p == null) return cMuted;
+        if (p >= 80) return cCrit;
+        if (p >= 50) return cWarn;
+        return cGood;
+    }
+
+    [STAThread]
+    static int Main(string[] args) {
+        for (int i = 0; i < args.Length - 1; i++) {
+            if (args[i] == "--snapshot")  snapshotPath  = args[i + 1];
+            if (args[i] == "--wallboard") wallboardUrl  = args[i + 1];
+            if (args[i] == "--distro")    distro        = args[i + 1];
+            if (args[i] == "--refresh")   int.TryParse(args[i + 1], out refreshSeconds);
+        }
+        if (snapshotPath.Length == 0) {
+            MessageBox.Show("Usage: ccmon-widget.exe --snapshot <path> [--wallboard <url>] [--distro <name>]",
+                            "ccmon");
+            return 2;
+        }
+
+        Application.EnableVisualStyles();
+        bText = new SolidBrush(cText); bMuted = new SolidBrush(cMuted); bTrack = new SolidBrush(cTrack);
+        bGood = new SolidBrush(cGood); bWarn = new SolidBrush(cWarn);   bCrit  = new SolidBrush(cCrit);
+        pBorder = new Pen(Color.FromArgb(70, 255, 255, 255), 1);
+        fLabel = new Font("Segoe UI", 8.5f);
+        fBig   = new Font("Segoe UI Semibold", 21f);
+        fSmall = new Font("Segoe UI", 7.5f);
+
+        form = new DesktopForm();
+        form.Text = "ccmon";
+        form.FormBorderStyle = FormBorderStyle.None;
+        form.StartPosition = FormStartPosition.Manual;
+        form.ShowInTaskbar = false;
+        form.TopMost = false;
+        form.BackColor = cSurface;
+        form.Opacity = 0.90;
+        form.Size = new Size(W, H);
+        Rectangle wa = Screen.PrimaryScreen.WorkingArea;
+        form.Location = new Point(wa.Right - W - 24, wa.Top + 24);
+        form.Region = new Region(RoundedPath(0, 0, W, H, RADIUS));
+        form.Paint += Paint;
+        HookDrag();
+
+        BuildTray();
+
+        timer = new Timer();
+        timer.Interval = 3000;   // fast until the first read; WSL may still be waking
+        timer.Tick += delegate {
+            Poll();
+            form.Invalidate();
+            UpdateTray();
+            UpdateZOrder();
+            if (everRead && timer.Interval != refreshSeconds * 1000)
+                timer.Interval = refreshSeconds * 1000;
+        };
+        timer.Start();
+
+        Poll();
+        UpdateTray();
+        form.Show();
+        UpdateZOrder();
+        Application.Run();
+        return 0;
+    }
+
+    static GraphicsPath RoundedPath(int x, int y, int w, int h, int r) {
+        var p = new GraphicsPath();
+        int d = r * 2;
+        p.AddArc(x, y, d, d, 180, 90);
+        p.AddArc(x + w - d, y, d, d, 270, 90);
+        p.AddArc(x + w - d, y + h - d, d, d, 0, 90);
+        p.AddArc(x, y + h - d, d, d, 90, 90);
+        p.CloseFigure();
+        return p;
+    }
+
+    static void Poll() {
+        Snapshot s = Snapshot.Read(snapshotPath);
+        if (s != null) { data = s; everRead = true; } else { data = null; }
+    }
+
+    static Brush ToneBrush(string tone) {
+        if (tone == "good") return bGood;
+        if (tone == "warn") return bWarn;
+        if (tone == "crit") return bCrit;
+        return bMuted;
+    }
+
+    static void Paint(object sender, PaintEventArgs e) {
+        Graphics g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+
+        using (GraphicsPath border = RoundedPath(0, 0, W - 1, H - 1, RADIUS))
+            g.DrawPath(pBorder, border);
+
+        bool stale = data == null || data.Stale;
+        string[] labels = { "5h session", "7d all models" };
+        double?[] values = { data == null ? null : data.FiveHour, data == null ? null : data.SevenDay };
+        long[] resets = { data == null ? 0 : data.FiveHourResets, data == null ? 0 : data.SevenDayResets };
+        int[] windows = { WINDOW_5H, WINDOW_7D };
+
+        int y = PAD;
+        for (int i = 0; i < 2; i++) {
+            Pace pc = Pace.Of(stale ? null : values[i], resets[i], windows[i]);
+
+            g.DrawString(labels[i], fLabel, bMuted, PAD, y);
+            string txt = values[i] == null ? "--" : Math.Round(values[i].Value) + "%";
+            SizeF sz = g.MeasureString(txt, fBig);
+            g.DrawString(txt, fBig, stale ? bMuted : bText, W - PAD - sz.Width, y - 6);
+
+            int barY = y + 30, barW = W - 2 * PAD;
+            using (GraphicsPath t = RoundedPath(PAD, barY, barW, 6, 3))
+                g.FillPath(bTrack, t);
+            if (values[i] != null && values[i] > 0) {
+                int fw = Math.Max(6, (int)(barW * Math.Min(values[i].Value, 100) / 100));
+                using (GraphicsPath f = RoundedPath(PAD, barY, fw, 6, 3))
+                    g.FillPath(LevelBrush(values[i], stale), f);
+            }
+            // Where usage would be if the window were spent evenly to 95%. The
+            // gap between this tick and the bar end is the whole point.
+            if (!stale && pc.PaceNow > 0 && pc.PaceNow < 100) {
+                int px = PAD + (int)(barW * pc.PaceNow / 100);
+                g.FillRectangle(bText, px, barY - 3, 2, 12);
+            }
+
+            string when = resets[i] > 0 ? "resets " + Pace.Until(pc.Remaining) : "";
+            g.DrawString(when, fSmall, bMuted, PAD, barY + 12);
+            if (!stale) {
+                SizeF vs = g.MeasureString(pc.Verdict, fSmall);
+                g.DrawString(pc.Verdict, fSmall, ToneBrush(pc.Tone), W - PAD - vs.Width, barY + 12);
+            }
+            y += 74;
+        }
+
+        string foot;
+        if (!everRead)          foot = "waiting for WSL...";
+        else if (data == null)  foot = "snapshot unreadable";
+        else if (data.Stale)    foot = "stale - " + data.Reason;
+        else {
+            double age = (DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - data.FetchedAtMs) / 1000.0;
+            foot = age < 90 ? "updated " + (int)age + "s ago" : "updated " + (int)(age / 60) + "m ago";
+        }
+        g.DrawString(foot, fSmall, bMuted, PAD, H - PAD - 6);
+    }
+
+    // Other windows reorder constantly, so re-sink every tick unless the tray
+    // icon has deliberately lifted us.
+    static void UpdateZOrder() {
+        if (onTop) {
+            if (!form.TopMost) form.TopMost = true;
+            Native.Lift(form.Handle);
+        } else {
+            if (form.TopMost) { form.TopMost = false; Native.Drop(form.Handle); }
+            Native.Sink(form.Handle);
+        }
+    }
+
+    // Left-clicking the tray toggles between the desktop and the front, and
+    // shows the widget again if it was hidden - otherwise the click would look
+    // like it did nothing.
+    static void ToggleTop() {
+        onTop = !onTop;
+        if (!form.Visible) { form.Show(); miHide.Text = "Hide widget"; }
+        UpdateZOrder();
+        UpdateMenuLabels();
+    }
+
+    static void ToggleHidden() {
+        if (form.Visible) form.Hide();
+        else { form.Show(); UpdateZOrder(); }
+        UpdateMenuLabels();
+    }
+
+    static void UpdateMenuLabels() {
+        miTop.Text = onTop ? "Send to desktop" : "Bring to front";
+        miHide.Text = form.Visible ? "Hide widget" : "Show widget";
+    }
+
+    static ToolStripMenuItem miHide, miTop;
+
+    static void BuildTray() {
+        var menu = new ContextMenuStrip();
+        miTop = new ToolStripMenuItem("Bring to front");
+        var miBoard = new ToolStripMenuItem("Open wallboard");
+        var miRefresh = new ToolStripMenuItem("Refresh now");
+        miHide = new ToolStripMenuItem("Hide widget");
+        var miExit = new ToolStripMenuItem("Exit");
+
+        miTop.Click += delegate { ToggleTop(); };
+        miBoard.Click += delegate {
+            if (wallboardUrl.Length > 0) Process.Start(wallboardUrl);
+            else tray.ShowBalloonTip(4000, "ccmon", "No wallboard URL configured. Run ./ccmon.", ToolTipIcon.Info);
+        };
+        miRefresh.Click += delegate {
+            if (distro.Length > 0) {
+                var psi = new ProcessStartInfo("wsl.exe",
+                    "-d " + distro + " -- $HOME/.claude/ccmon/usage-poll.sh");
+                psi.WindowStyle = ProcessWindowStyle.Hidden;
+                psi.CreateNoWindow = true;
+                try { Process.Start(psi); } catch { }
+            }
+            Poll(); form.Invalidate(); UpdateTray();
+        };
+        miHide.Click += delegate { ToggleHidden(); };
+        miExit.Click += delegate {
+            tray.Visible = false;
+            if (trayHandle != IntPtr.Zero) Native.DestroyIcon(trayHandle);
+            Application.Exit();
+        };
+
+        menu.Items.AddRange(new ToolStripItem[] {
+            miTop, miHide, new ToolStripSeparator(), miBoard, miRefresh, new ToolStripSeparator(), miExit });
+
+        tray = new NotifyIcon();
+        tray.ContextMenuStrip = menu;
+        tray.Text = "ccmon";
+        tray.Icon = MakeIcon(null, true);
+        tray.Visible = true;
+        tray.MouseClick += delegate(object s, MouseEventArgs e) {
+            if (e.Button == MouseButtons.Left) ToggleTop();
+        };
+        UpdateMenuLabels();
+    }
+
+    static Icon MakeIcon(double? pct, bool stale) {
+        using (var bmp = new Bitmap(16, 16))
+        using (var g = Graphics.FromImage(bmp)) {
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.Clear(Color.Transparent);
+            using (var b = new SolidBrush(LevelColor(pct, stale)))
+                g.FillEllipse(b, 2, 2, 12, 12);
+            IntPtr h = bmp.GetHicon();
+            // GetHicon leaks unless the previous handle is destroyed explicitly.
+            if (trayHandle != IntPtr.Zero) Native.DestroyIcon(trayHandle);
+            trayHandle = h;
+            return Icon.FromHandle(h);
+        }
+    }
+
+    static void UpdateTray() {
+        bool stale = data == null || data.Stale;
+        double? worst = null;
+        if (data != null) {
+            if (data.FiveHour != null) worst = data.FiveHour;
+            if (data.SevenDay != null && (worst == null || data.SevenDay > worst)) worst = data.SevenDay;
+        }
+        tray.Icon = MakeIcon(worst, stale);
+        tray.Text = stale
+            ? "ccmon - no data"
+            : "ccmon  5h " + Math.Round(data.FiveHour ?? 0) + "%  7d " + Math.Round(data.SevenDay ?? 0) + "%";
+    }
+
+    static bool dragging; static Point dragOrigin;
+    static void HookDrag() {
+        form.MouseDown += delegate(object s, MouseEventArgs e) {
+            if (e.Button == MouseButtons.Left) { dragging = true; dragOrigin = Cursor.Position; }
+        };
+        form.MouseUp += delegate { dragging = false; };
+        form.MouseMove += delegate {
+            if (!dragging) return;
+            Point now = Cursor.Position;
+            form.Location = new Point(form.Location.X + now.X - dragOrigin.X,
+                                      form.Location.Y + now.Y - dragOrigin.Y);
+            dragOrigin = now;
+        };
+    }
+}

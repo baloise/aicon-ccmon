@@ -1,0 +1,12 @@
+[Unit]
+Description=Sync ccmon usage history every 15 minutes
+
+[Timer]
+OnStartupSec=5min
+OnUnitActiveSec=15min
+AccuracySec=5min
+RandomizedDelaySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,164 @@
+#!/usr/bin/env bash
+# ccmon - the single entry point. Run it bare and it checks everything,
+# explains anything that is missing, and offers to fix it. Safe to re-run.
+
+set -uo pipefail
+
+CCMON_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+CCMON_DIR="$CLAUDE_DIR/ccmon"
+CREDS="$CLAUDE_DIR/.credentials.json"
+SNAPSHOT="$CLAUDE_DIR/usage-snapshot.json"
+ENV_FILE="$CCMON_DIR/grafana-cloud.env"
+PUSH_LOG="$CCMON_DIR/last-push.txt"
+
+MODE=doctor
+ASSUME_YES=0
+WANT_GRAFANA=0
+IS_WSL=0
+UNC_PATH=""
+WIN_PROFILE=""
+
+for lib in common detect install grafana windows history pages; do
+  # shellcheck source=/dev/null
+  . "$CCMON_ROOT/lib/$lib.sh"
+done
+
+usage() {
+  cat <<EOF
+ccmon - Claude Code usage monitoring
+
+  ./ccmon                check everything and offer to fix it (default)
+  ./ccmon doctor         same, explicitly
+  ./ccmon doctor --yes   accept every suggested fix without prompting
+  ./ccmon status         read-only summary; changes nothing
+  ./ccmon update         git pull, then re-apply whatever drifted
+  ./ccmon serve          serve the wallboard locally (no GitHub sign-in needed)
+  ./ccmon grafana        optional: also push samples to Grafana Cloud
+  ./ccmon uninstall      remove the timer and installed files (keeps the token)
+
+Everything you need to know is printed by the command as you go. There is no
+separate setup document to cross-reference.
+EOF
+}
+
+run_stages() {
+  stage_prereqs || return 1
+  stage_platform
+  stage_network
+  stage_claude || return 1
+  stage_poller
+  stage_token
+  stage_push
+  stage_widget
+  stage_statusline
+  stage_history
+  stage_pages
+}
+
+cmd_doctor() {
+  printf '%sccmon%s  %s\n' "$C_BOLD" "$C_RESET" "$CCMON_ROOT"
+  run_stages
+  summary
+}
+
+cmd_status() {
+  MODE=status
+  printf '%sccmon status%s\n' "$C_BOLD" "$C_RESET"
+  run_stages
+  if [ -f "$SNAPSHOT" ]; then
+    stage "" "Current values"
+    # Note: in jq "," binds tighter than "|", so each branch needs its own parens.
+    jq -r '
+      if .ok then
+        ( "  5h  \(.five_hour // "-")%" ),
+        ( "  7d  \(.seven_day // "-")%" ),
+        ( (.limits // [])[]
+          | select(.kind == "weekly_scoped")
+          | "  7d  \(.percent)%  (\(.scope))" )
+      else "  stale: \(.reason // "unknown")" end' "$SNAPSHOT"
+    local age
+    age=$(( $(date +%s) - $(jq -r '(.fetchedAtMs // .checkedAtMs // 0) / 1000 | floor' "$SNAPSHOT") ))
+    info "snapshot age: ${age}s"
+  fi
+  summary
+}
+
+cmd_update() {
+  printf '%sccmon update%s\n' "$C_BOLD" "$C_RESET"
+  if [ -d "$CCMON_ROOT/.git" ]; then
+    stage "" "Repository"
+    local before after
+    before=$(git -C "$CCMON_ROOT" rev-parse --short HEAD 2>/dev/null)
+    if git -C "$CCMON_ROOT" pull --ff-only 2>&1 | sed 's/^/        /'; then
+      after=$(git -C "$CCMON_ROOT" rev-parse --short HEAD 2>/dev/null)
+      [ "$before" = "$after" ] && ok "already at $after" || fixed "updated $before -> $after"
+    else
+      fail "git pull failed - resolve it and re-run"
+    fi
+  else
+    skip "not a git checkout"
+  fi
+  run_stages
+  summary
+}
+
+cmd_grafana() {
+  printf '%sccmon grafana%s\n' "$C_BOLD" "$C_RESET"
+  stage_token
+  stage_push
+  summary
+}
+
+cmd_serve() {
+  local port="${CCMON_PORT:-8787}"
+  local dir="$CCMON_DIR/history"
+  if [ ! -f "$dir/index.html" ]; then
+    printf 'No wallboard at %s - run ./ccmon first.\n' "$dir" >&2
+    exit 1
+  fi
+  # The page fetches its data, which a file:// URL cannot do - hence a server.
+  printf '%sccmon wallboard%s\n' "$C_BOLD" "$C_RESET"
+  printf '  http://localhost:%s/\n' "$port"
+  local ip
+  ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+  [ -n "$ip" ] && printf '  http://%s:%s/   (from another machine on this network)\n' "$ip" "$port"
+  printf '%sCtrl-C to stop.%s\n\n' "$C_DIM" "$C_RESET"
+  exec python3 -m http.server "$port" --directory "$dir" --bind 0.0.0.0
+}
+
+cmd_uninstall() {
+  printf '%sccmon uninstall%s\n' "$C_BOLD" "$C_RESET"
+  stage "" "Removing"
+  systemctl --user disable --now claude-usage.timer >/dev/null 2>&1 \
+    && fixed "timer disabled" || skip "timer was not active"
+  rm -f "$HOME/.config/systemd/user/claude-usage.timer" \
+        "$HOME/.config/systemd/user/claude-usage.service"
+  rm -rf "$HOME/.config/systemd/user/claude-usage.service.d"
+  systemctl --user daemon-reload
+  fixed "units removed"
+  rm -f "$CCMON_DIR/usage-poll.sh" "$CCMON_DIR/statusline.sh" "$PUSH_LOG"
+  fixed "installed scripts removed"
+  info "kept $ENV_FILE and $SNAPSHOT - delete them by hand if you want them gone"
+  summary
+}
+
+cmd=""
+for arg in "$@"; do
+  case "$arg" in
+    --yes|-y) ASSUME_YES=1 ;;
+    -h|--help|help) usage; exit 0 ;;
+    doctor|status|update|uninstall|serve) cmd="$arg" ;;
+    grafana) cmd=grafana; WANT_GRAFANA=1 ;;
+    *) printf 'unknown argument: %s\n\n' "$arg"; usage; exit 2 ;;
+  esac
+done
+
+case "${cmd:-doctor}" in
+  doctor)    cmd_doctor ;;
+  status)    cmd_status ;;
+  update)    cmd_update ;;
+  serve)     cmd_serve ;;
+  grafana)   cmd_grafana ;;
+  uninstall) cmd_uninstall ;;
+esac

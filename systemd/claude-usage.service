@@ -1,0 +1,7 @@
+[Unit]
+Description=ccmon - poll Claude usage limits and ship a sample to Grafana Cloud
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/.claude/ccmon/usage-poll.sh

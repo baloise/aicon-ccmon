@@ -1,0 +1,4 @@
+# The Grafana Cloud token never lives in the repo at all - ccmon writes it to
+# ~/.claude/ccmon/grafana-cloud.env. This entry is belt-and-braces.
+grafana-cloud.env
+*.local
