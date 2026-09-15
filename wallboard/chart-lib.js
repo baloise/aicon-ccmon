@@ -46,6 +46,19 @@ const CCMON = (function () {
     return `resets in ${d}s`;
   }
 
+  // The absolute reset time, with a weekday once it is not today. The widget
+  // stays with the duration alone; a wallboard has room for both, and "Sat
+  // 07:00" answers a different question than "in 3d 15h".
+  function resetAt(sec) {
+    const d = new Date(sec * 1000);
+    const t = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
+    if (d.toDateString() === new Date().toDateString()) return t;
+    const within = sec - Math.floor(Date.now() / 1000) < 7 * 86400;
+    const day = d.toLocaleDateString(undefined,
+      within ? { weekday: 'short' } : { day: 'numeric', month: 'short' });
+    return `${day} ${t}`;
+  }
+
   function draw(host, tipEl, series, rows, opts) {
     const o = Object.assign({ W: 920, H: 210, ml: 34, mr: 96, mt: 10, mb: 24, label: true }, opts || {});
     const { W, H, ml, mr, mt, mb } = o;
@@ -179,5 +192,5 @@ const CCMON = (function () {
   }
 
   return { GAP, TARGET, WINDOW_5H, WINDOW_7D,
-           segments, fmtDay, fmtFull, resetPhrase, draw, scopeKey, pace };
+           segments, fmtDay, fmtFull, resetPhrase, resetAt, draw, scopeKey, pace };
 })();

@@ -86,6 +86,13 @@ const theme = new URLSearchParams(location.search).get('theme');
 if (theme === 'dark' || theme === 'light') document.documentElement.dataset.theme = theme;
 
 const el = id => document.getElementById(id);
+// Duration plus the absolute time. Once the reset has passed resetPhrase()
+// already returns a timestamp, so do not append a second one.
+function resetLine(at) {
+  const now = Math.floor(Date.now() / 1000);
+  return at > now ? `${CCMON.resetPhrase(at)} · ${CCMON.resetAt(at)}` : CCMON.resetPhrase(at);
+}
+
 const pctColor = p => p >= 80 ? 'var(--crit)' : p >= 50 ? 'var(--warn)' : 'var(--good)';
 const toneColor = t => t === 'crit' ? 'var(--crit)' : t === 'warn' ? 'var(--warn)'
                      : t === 'good' ? 'var(--good)' : 'var(--text-muted)';
@@ -114,7 +121,7 @@ function hero(label, pct, resetsAt, windowSec, perUnit) {
       ${p.paceNow > 0 && p.paceNow < 100
         ? `<span class="tick" style="left:${p.paceNow}%"></span>` : ''}
     </div>
-    <div class="reset">${resetsAt ? CCMON.resetPhrase(resetsAt) : '&nbsp;'}</div>
+    <div class="reset" data-resets="${resetsAt || ''}">${resetsAt ? resetLine(resetsAt) : '&nbsp;'}</div>
     <div class="rate">${rate}</div>
   </div>`;
 }
@@ -185,4 +192,16 @@ async function load() {
 
 load();
 setInterval(load, REFRESH_MS);
+
+// The data only changes every 15 minutes, but the countdown changes every
+// second. resetPhrase() already computes client-side from an absolute
+// timestamp, so the only thing missing was redrawing it: on the minute-long
+// render cycle the last minute of a window froze and then jumped. Tick just
+// these nodes - the pace verdict moves far too slowly to be worth recomputing.
+setInterval(() => {
+  for (const el of document.querySelectorAll('.reset[data-resets]')) {
+    const at = Number(el.dataset.resets);
+    if (at) el.textContent = resetLine(at);
+  }
+}, 1000);
 </script>
