@@ -70,6 +70,13 @@ install_file() { # src dst mode label
   fixed "$verb $label -> $dst"
 }
 
+# owner/repo from the origin URL. Handles ssh, https, and https with a userinfo
+# component (https://user@github.com/...), which a plain scheme strip misses.
+repo_slug() {
+  git -C "$CCMON_ROOT" remote get-url origin 2>/dev/null \
+    | sed -E 's#^[a-z]+://[^/@]*@?##; s#^git@[^:]*:##; s#^[^/]*/##; s#\.git$##'
+}
+
 summary() {
   printf '\n%s────────%s %s ok' "$C_DIM" "$C_RESET" "$N_OK"
   [ "$N_FIXED" -gt 0 ] && printf ', %s%s changed%s' "$C_YELLOW" "$N_FIXED" "$C_RESET"

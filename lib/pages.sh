@@ -9,8 +9,7 @@ stage_pages() {
   stage 11 "GitHub Pages"
 
   local slug
-  slug=$(git -C "$CCMON_ROOT" remote get-url origin 2>/dev/null \
-         | sed -E 's#(git@github.com:|https://github.com/)##; s/\.git$//')
+  slug=$(repo_slug)
   if [ -z "$slug" ]; then
     skip "no GitHub remote"
     return 0

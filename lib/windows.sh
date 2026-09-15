@@ -79,9 +79,7 @@ stage_widget() {
 
   # The tray menu opens the wallboard; prefer the published copy, since the local
   # server is only up while `ccmon serve` runs.
-  WIDGET_URL=$(gh api "repos/$(git -C "$CCMON_ROOT" remote get-url origin 2>/dev/null \
-      | sed -E 's#(git@github.com:|https://github.com/)##; s/\.git$//')/pages" \
-      --jq '.html_url' 2>/dev/null)
+  WIDGET_URL=$(gh api "repos/$(repo_slug)/pages" --jq '.html_url' 2>/dev/null)
   [ -n "$WIDGET_URL" ] || WIDGET_URL="http://localhost:${CCMON_PORT:-8787}/"
   WIDGET_EXE="$win_dir_win\\ccmon-widget.exe"
   WIDGET_ARGS="--snapshot \"$UNC_PATH\\usage-snapshot.json\" --wallboard \"$WIDGET_URL\" --distro \"${WSL_DISTRO_NAME:-}\""
