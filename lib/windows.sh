@@ -33,9 +33,16 @@ stage_widget() {
     confirm && { rm -f "$win_dir_unix/ccmon-widget.ps1"; fixed "removed it"; }
   fi
 
-  local src_changed=0
-  cmp -s "$CCMON_ROOT/widget/CcmonWidget.cs" "$win_dir_unix/CcmonWidget.cs" 2>/dev/null || src_changed=1
   install_file "$CCMON_ROOT/widget/CcmonWidget.cs" "$win_dir_unix/CcmonWidget.cs" 644 "widget source"
+
+  # Resolved before the build rather than just before the launcher is written:
+  # a rebuild has to stop the running widget, and cannot start it again without
+  # the arguments. The tray menu opens the wallboard; prefer the published copy,
+  # since the local server is only up while `ccmon serve` runs.
+  WIDGET_URL=$(gh api "repos/$(repo_slug)/pages" --jq '.html_url' 2>/dev/null)
+  [ -n "$WIDGET_URL" ] || WIDGET_URL="http://localhost:${CCMON_PORT:-8787}/"
+  WIDGET_EXE="$win_dir_win\\ccmon-widget.exe"
+  WIDGET_ARGS="--snapshot \"$UNC_PATH\\usage-snapshot.json\" --wallboard \"$WIDGET_URL\" --distro \"${WSL_DISTRO_NAME:-}\" --repo \"$CCMON_ROOT\""
 
   local csc=""
   for c in "${CSC_CANDIDATES[@]}"; do [ -x "$c" ] && { csc="$c"; break; }; done
@@ -45,20 +52,37 @@ stage_widget() {
     return 1
   fi
 
-  if [ ! -f "$win_dir_unix/ccmon-widget.exe" ] || [ "$src_changed" = 1 ]; then
+  # Against the exe rather than against the repo copy of the source: install_file
+  # has already synced the source by now, so comparing the two would call a
+  # widget current the moment the source was copied - even if the build that
+  # should have followed never ran, or failed.
+  if [ ! -f "$win_dir_unix/ccmon-widget.exe" ] \
+     || [ "$win_dir_unix/CcmonWidget.cs" -nt "$win_dir_unix/ccmon-widget.exe" ]; then
     need "widget needs building"
     if confirm; then
-      local out
+      # Windows locks a running executable, so csc cannot overwrite the widget
+      # while it is on the desktop - which it always is. Stop it first, and put
+      # it back afterwards rather than leaving that to widget_process, whose
+      # message would blame the Startup shortcut for our own doing.
+      local was_running=0
+      if widget_running; then was_running=1; stop_widget; fi
+      # The old exe survives a failed build, so "the file exists" proves
+      # nothing; only a changed mtime distinguishes a build from a no-op.
+      local before out
+      before=$(stat -c %Y "$win_dir_unix/ccmon-widget.exe" 2>/dev/null || echo 0)
       out=$("$csc" /nologo /target:winexe /optimize+ \
               "/out:$win_dir_win\\ccmon-widget.exe" \
               /r:System.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll \
               /r:System.Web.Extensions.dll \
               "$win_dir_win\\CcmonWidget.cs" 2>&1 | tr -d '\r')
-      if [ -f "$win_dir_unix/ccmon-widget.exe" ]; then
+      if [ -f "$win_dir_unix/ccmon-widget.exe" ] \
+         && [ "$(stat -c %Y "$win_dir_unix/ccmon-widget.exe" 2>/dev/null || echo 0)" != "$before" ]; then
         fixed "built ccmon-widget.exe"
+        if [ "$was_running" = 1 ]; then start_widget; fi
       else
         fail "build failed"
         [ -n "$out" ] && printf '%s\n' "$out" | head -5 | sed 's/^/        /'
+        if [ "$was_running" = 1 ]; then start_widget; fi   # better the old widget than none
         return 1
       fi
     fi
@@ -76,13 +100,6 @@ stage_widget() {
     fail "Windows cannot read $UNC_PATH\\usage-snapshot.json"
     return 1
   fi
-
-  # The tray menu opens the wallboard; prefer the published copy, since the local
-  # server is only up while `ccmon serve` runs.
-  WIDGET_URL=$(gh api "repos/$(repo_slug)/pages" --jq '.html_url' 2>/dev/null)
-  [ -n "$WIDGET_URL" ] || WIDGET_URL="http://localhost:${CCMON_PORT:-8787}/"
-  WIDGET_EXE="$win_dir_win\\ccmon-widget.exe"
-  WIDGET_ARGS="--snapshot \"$UNC_PATH\\usage-snapshot.json\" --wallboard \"$WIDGET_URL\" --distro \"${WSL_DISTRO_NAME:-}\" --repo \"$CCMON_ROOT\""
 
   widget_launcher "$win_dir_unix"
   widget_autostart
