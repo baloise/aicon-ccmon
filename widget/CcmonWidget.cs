@@ -137,7 +137,7 @@ class DesktopForm : Form {
 }
 
 static class Program {
-    const int W = 268, H = 190, PAD = 16, RADIUS = 16;
+    const int W = 268, H = 190, PAD = 16, RADIUS = 16, MARGIN = 24;
     const int WINDOW_5H = 5 * 3600, WINDOW_7D = 7 * 86400;
 
     static readonly Color cSurface = Color.FromArgb(26, 26, 25);
@@ -163,6 +163,7 @@ static class Program {
     static Snapshot data;
     static bool everRead = false;
     static bool onTop = false;      // false = pinned to the desktop
+    static bool placedByHand = false;   // true once dragged: their spot, not ours
     static IntPtr trayHandle = IntPtr.Zero;
 
     // Colour comes from the pace tone and nowhere else - see pace() in
@@ -175,6 +176,32 @@ static class Program {
         if (tone == "crit") return cCrit;
         return cMuted;
     }
+    // Home is the top-right corner of the work area, one margin in.
+    static Point HomeIn(Rectangle wa) {
+        return new Point(wa.Right - W - MARGIN, wa.Top + MARGIN);
+    }
+
+    // Pull a position wholly inside the work area, keeping the margin where
+    // there is room for one. Max wraps Min so that on a screen too small for
+    // both the left and top edges win: a widget hanging off the right is the
+    // bug being fixed, and one hanging off the left would just be its mirror.
+    static Point ClampInto(Rectangle wa, Point p) {
+        return new Point(
+            Math.Max(wa.Left + MARGIN, Math.Min(p.X, wa.Right  - W - MARGIN)),
+            Math.Max(wa.Top  + MARGIN, Math.Min(p.Y, wa.Bottom - H - MARGIN)));
+    }
+
+    // Windows leaves a borderless, never-activated tool window where it was when
+    // the desktop is resized, so a narrower screen leaves it hanging off the
+    // right edge. Re-anchor it if it is still where we put it; if the user has
+    // dragged it somewhere, respect that and only pull it back into view.
+    static void Reposition() {
+        Rectangle wa = placedByHand
+            ? Screen.FromRectangle(form.Bounds).WorkingArea   // their monitor, if it is still there
+            : Screen.PrimaryScreen.WorkingArea;
+        form.Location = placedByHand ? ClampInto(wa, form.Location) : HomeIn(wa);
+    }
+
     // Ranked so the tray, which has one dot for two windows, can show the worse.
     static int ToneRank(string tone) {
         if (tone == "crit") return 3;
@@ -215,11 +242,16 @@ static class Program {
         form.BackColor = cSurface;
         form.Opacity = 0.90;
         form.Size = new Size(W, H);
-        Rectangle wa = Screen.PrimaryScreen.WorkingArea;
-        form.Location = new Point(wa.Right - W - 24, wa.Top + 24);
+        form.Location = HomeIn(Screen.PrimaryScreen.WorkingArea);
         form.Region = new Region(RoundedPath(0, 0, W, H, RADIUS));
         form.Paint += Paint;
         HookDrag();
+
+        // Fires on a resolution change, a monitor being added or removed, and a
+        // dock or undock. Raised off the UI thread, hence the marshalling.
+        Microsoft.Win32.SystemEvents.DisplaySettingsChanged += delegate {
+            try { form.BeginInvoke((MethodInvoker)delegate { Reposition(); }); } catch { }
+        };
 
         BuildTray();
 
@@ -474,7 +506,15 @@ static class Program {
         form.MouseDown += delegate(object s, MouseEventArgs e) {
             if (e.Button == MouseButtons.Left) { dragging = true; dragOrigin = Cursor.Position; }
         };
-        form.MouseUp += delegate { dragging = false; };
+        form.MouseUp += delegate {
+            if (dragging) {
+                dragging = false;
+                placedByHand = true;
+                // A drag can also end off-screen, on any number of monitors.
+                form.Location = ClampInto(Screen.FromRectangle(form.Bounds).WorkingArea,
+                                          form.Location);
+            }
+        };
         form.MouseMove += delegate {
             if (!dragging) return;
             Point now = Cursor.Position;
