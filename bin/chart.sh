@@ -38,7 +38,7 @@ cat > "$tmpl" <<'HTML'
 <style>
 .ccmon-viz{
   --surface-1:#fcfcfb; --text-primary:#0b0b0b; --text-secondary:#52514e; --text-muted:#82817c;
-  --grid:#e6e5e1; --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a;
+  --grid:#e6e5e1; --s1:#2a78d6; --s2:#eb6834;
   background:var(--surface-1); color:var(--text-primary);
   font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
   padding:20px; max-width:960px; margin:0 auto; box-sizing:border-box;
@@ -46,7 +46,7 @@ cat > "$tmpl" <<'HTML'
 @media (prefers-color-scheme:dark){
   .ccmon-viz{
     --surface-1:#1a1a19; --text-primary:#fff; --text-secondary:#c3c2b7; --text-muted:#8f8e86;
-    --grid:#33322f; --s1:#3987e5; --s2:#d95926; --s3:#199e70;
+    --grid:#33322f; --s1:#3987e5; --s2:#d95926;
   }
 }
 .ccmon-viz h1{font-size:18px;margin:0 0 2px;font-weight:600}
@@ -116,8 +116,10 @@ CCMON.draw(document.getElementById('c1'), document.getElementById('t1'), [
       pts: RAW.map(d => ({ t: d.t, v: (d.scoped || {})[scopeKey] ?? null })) }] : [])
 ], RAW);
 
+// Single series, named by its heading and end label: slot 1, like any chart's
+// first line. The palette's green slot stays unused - see wallboard/index.html.
 CCMON.draw(document.getElementById('c2'), document.getElementById('t2'), [
-  { label: 'Session', color: 'var(--s3)', pts: RAW.map(d => ({ t: d.t, v: d.five_hour ?? null })) }
+  { label: 'Session', color: 'var(--s1)', pts: RAW.map(d => ({ t: d.t, v: d.five_hour ?? null })) }
 ], RAW);
 
 document.getElementById('ccmon-meta').textContent =

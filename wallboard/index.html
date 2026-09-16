@@ -17,20 +17,22 @@
   headroom.
 
   Colour says that and only that. Every green, amber and red on the page comes
-  from the pace verdict, so none of them can disagree with another.
+  from the pace verdict, so none of them can disagree with another. The charts
+  draw from a separate categorical palette, and its third slot - a green close
+  enough to the verdict's to be mistaken for it - is deliberately left unused.
 -->
 <style>
 :root{
   --surface-1:#000000; --surface-2:#101010; --border:#262624;
   --text-primary:#f5f5f3; --text-secondary:#c3c2b7; --text-muted:#8f8e86; --grid:#2a2a28;
-  --s1:#3987e5; --s2:#d95926; --s3:#199e70;
+  --s1:#3987e5; --s2:#d95926;
   --good:#199e70; --warn:#eab308; --crit:#e66767;
   color-scheme:dark;
 }
 :root[data-theme="light"]{
   --surface-1:#fcfcfb; --surface-2:#f2f1ed; --border:#e6e5e1;
   --text-primary:#0b0b0b; --text-secondary:#52514e; --text-muted:#82817c; --grid:#e6e5e1;
-  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a;
+  --s1:#2a78d6; --s2:#eb6834;
   --good:#1baf7a; --warn:#a16207; --crit:#b91c1c;
   color-scheme:light;
 }
@@ -189,8 +191,11 @@ async function load() {
     ...(scopeKey ? [{ label: scopeKey, color: 'var(--s2)',
         pts: rows.map(d => ({ t: d.t, v: (d.scoped || {})[scopeKey] ?? null })) }] : [])
   ], rows, opts);
+  // One series, named by the card heading and by its own end label, so the hue
+  // carries no identity here: it takes slot 1, as the first line of any chart
+  // does. Giving it a hue of its own is what put a green line on the page.
   CCMON.draw(el('c2'), null, [
-    { label: 'Session', color: 'var(--s3)', pts: rows.map(d => ({ t: d.t, v: d.five_hour ?? null })) }
+    { label: 'Session', color: 'var(--s1)', pts: rows.map(d => ({ t: d.t, v: d.five_hour ?? null })) }
   ], rows, opts);
 
   // Freshness is the only thing the old per-machine strip actually told you.
