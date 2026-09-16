@@ -9,17 +9,14 @@ CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 CCMON_DIR="$CLAUDE_DIR/ccmon"
 CREDS="$CLAUDE_DIR/.credentials.json"
 SNAPSHOT="$CLAUDE_DIR/usage-snapshot.json"
-ENV_FILE="$CCMON_DIR/grafana-cloud.env"
-PUSH_LOG="$CCMON_DIR/last-push.txt"
 
 MODE=doctor
 ASSUME_YES=0
-WANT_GRAFANA=0
 IS_WSL=0
 UNC_PATH=""
 WIN_PROFILE=""
 
-for lib in common detect install grafana windows history pages; do
+for lib in common detect install windows history pages; do
   # shellcheck source=/dev/null
   . "$CCMON_ROOT/lib/$lib.sh"
 done
@@ -34,8 +31,7 @@ ccmon - Claude Code usage monitoring
   ./ccmon status         read-only summary; changes nothing
   ./ccmon update         git pull, then re-apply whatever drifted
   ./ccmon serve          serve the wallboard locally (no GitHub sign-in needed)
-  ./ccmon grafana        optional: also push samples to Grafana Cloud
-  ./ccmon uninstall      remove the timer and installed files (keeps the token)
+  ./ccmon uninstall      remove the timer and installed files
 
 Everything you need to know is printed by the command as you go. There is no
 separate setup document to cross-reference.
@@ -48,8 +44,6 @@ run_stages() {
   stage_network
   stage_claude || return 1
   stage_poller
-  stage_token
-  stage_push
   stage_widget
   stage_statusline
   stage_history
@@ -103,13 +97,6 @@ cmd_update() {
   summary
 }
 
-cmd_grafana() {
-  printf '%sccmon grafana%s\n' "$C_BOLD" "$C_RESET"
-  stage_token
-  stage_push
-  summary
-}
-
 cmd_serve() {
   local port="${CCMON_PORT:-8787}"
   local dir="$CCMON_DIR/history"
@@ -137,9 +124,9 @@ cmd_uninstall() {
   rm -rf "$HOME/.config/systemd/user/claude-usage.service.d"
   systemctl --user daemon-reload
   fixed "units removed"
-  rm -f "$CCMON_DIR/usage-poll.sh" "$CCMON_DIR/statusline.sh" "$PUSH_LOG"
+  rm -f "$CCMON_DIR/usage-poll.sh" "$CCMON_DIR/statusline.sh"
   fixed "installed scripts removed"
-  info "kept $ENV_FILE and $SNAPSHOT - delete them by hand if you want them gone"
+  info "kept $SNAPSHOT - delete it by hand if you want it gone"
   summary
 }
 
@@ -149,7 +136,6 @@ for arg in "$@"; do
     --yes|-y) ASSUME_YES=1 ;;
     -h|--help|help) usage; exit 0 ;;
     doctor|status|update|uninstall|serve) cmd="$arg" ;;
-    grafana) cmd=grafana; WANT_GRAFANA=1 ;;
     *) printf 'unknown argument: %s\n\n' "$arg"; usage; exit 2 ;;
   esac
 done
@@ -159,6 +145,5 @@ case "${cmd:-doctor}" in
   status)    cmd_status ;;
   update)    cmd_update ;;
   serve)     cmd_serve ;;
-  grafana)   cmd_grafana ;;
   uninstall) cmd_uninstall ;;
 esac

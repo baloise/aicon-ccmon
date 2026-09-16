@@ -64,34 +64,12 @@ a gap overnight.
 
 The quota is per account (`subscriptionType: "team"`), not per machine. Several
 machines therefore report *identical* numbers — there is nothing to aggregate.
-Each machine still pushes its own series, labelled by `host`, purely so that two
-laptops pushing at nearly the same instant cannot produce out-of-order or
-duplicate samples for one series. Charts collapse them again with `max()`.
+Each machine still writes its own history file, purely so that two laptops
+syncing at nearly the same instant cannot conflict over one file. The wallboard
+merges them again and takes the newest reading for its headline figures.
 
 A pleasant side effect: whichever machine happens to be awake extends the
 timeline, so the history has fewer gaps than any single laptop would produce.
-
-## Why OTLP/JSON rather than Prometheus remote_write
-
-Prometheus `remote_write` requires snappy-compressed protobuf, which a shell
-script cannot produce. Grafana Cloud's OTLP gateway accepts OTLP/HTTP with
-**JSON** encoding, documented as suitable for low-traffic cases — one sample
-every 5 minutes qualifies comfortably. So the poller POSTs JSON with `curl` and
-needs no agent, collector or extra daemon.
-
-Endpoint: `https://otlp-gateway-prod-eu-west-2.grafana.net/otlp/v1/metrics`,
-HTTP Basic with the instance ID as username and a Cloud Access Policy token
-(scope `metrics:write`) as password.
-
-### Put labels on data points, not on the resource
-
-Mimir promotes only a handful of resource attributes to labels and files the
-rest under `target_info`, where they are useless for querying these series. So
-`account` and `host` are set as **data point** attributes; only `service.name`
-is a resource attribute.
-
-Metric names carry no `unit` field. The OTel→Prometheus translation appends a
-unit suffix, and omitting the unit keeps the names exactly as written.
 
 ## The status line payload
 
@@ -117,8 +95,6 @@ from the API.
 |---|---|
 | `~/.claude/ccmon/usage-poll.sh` | the poller (installed by `./ccmon`) |
 | `~/.claude/ccmon/statusline.sh` | the status line script |
-| `~/.claude/ccmon/grafana-cloud.env` | the token, `0600`, **outside the repo by design** |
-| `~/.claude/ccmon/last-push.txt` | timestamp, HTTP status and body of the last push |
 | `~/.claude/usage-snapshot.json` | the current reading, and what the widget displays |
 
 The snapshot is also readable from Windows at
@@ -237,9 +213,8 @@ and re-enabling Pages mints a new one, so leave it alone.
 ## Why machines are identified by an opaque id
 
 Each machine writes its own `data/<id>.jsonl`, and the id is random rather than
-the hostname. The per-machine split is load-bearing — it is what stops concurrent
-pushes conflicting, and what stops Mimir rejecting out-of-order samples when two
-machines push the same series at once.
+the hostname. The per-machine split is load-bearing — it is what lets several
+machines sync to the same branch without conflicting over a shared file.
 
 The *identity* is not. Every machine reports the same account-wide numbers,
 whichever one is awake extends the same timeline, and "is this dashboard live?"

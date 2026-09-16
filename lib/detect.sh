@@ -86,13 +86,6 @@ stage_network() {
     ok "api.anthropic.com reachable"
   fi
 
-  code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 \
-    https://otlp-gateway-prod-eu-west-2.grafana.net 2>/dev/null || echo 000)
-  if [ "$code" = "000" ]; then
-    need "OTLP gateway unreachable - pushes will fail until this is resolved"
-  else
-    ok "Grafana Cloud OTLP gateway reachable"
-  fi
 }
 
 stage_claude() {

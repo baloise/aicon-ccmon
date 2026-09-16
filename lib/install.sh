@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Stages 5 and 9: poller + timer, and the Claude Code status line.
+# Stages 5 and 7: poller + timer, and the Claude Code status line.
 
 UNIT_DIR="$HOME/.config/systemd/user"
 
@@ -50,7 +50,7 @@ stage_poller() {
 }
 
 stage_statusline() {
-  stage 9 "Claude Code status line"
+  stage 7 "Claude Code status line"
   install_file "$CCMON_ROOT/bin/statusline.sh" "$CCMON_DIR/statusline.sh" 755 "status line script"
 
   # Migrate the pre-repo status line, if present.

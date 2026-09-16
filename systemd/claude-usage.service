@@ -1,5 +1,5 @@
 [Unit]
-Description=ccmon - poll Claude usage limits and ship a sample to Grafana Cloud
+Description=ccmon - poll Claude usage limits and record a sample
 After=network-online.target
 
 [Service]

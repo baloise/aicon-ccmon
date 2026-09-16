@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# ccmon poller: read Claude usage limits, write a local snapshot, ship a sample
-# to Grafana Cloud. Run from a systemd timer; see ./ccmon for setup.
+# ccmon poller: read Claude usage limits, write a local snapshot, and append a
+# sample to this machine's history file. Run from a systemd timer; see ./ccmon
+# for setup.
 #
 # Read-only on credentials: never refreshes or rotates the OAuth token, so it
 # cannot invalidate Claude Code's own session.
@@ -11,9 +12,9 @@ CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 CCMON_DIR="$CLAUDE_DIR/ccmon"
 CREDS="$CLAUDE_DIR/.credentials.json"
 # An opaque id, not the hostname. It exists only to keep each machine's data in
-# its own file (so concurrent pushes cannot conflict) and its own metric series.
-# Publishing the real hostname would leak asset naming and answer nothing: every
-# machine reports the same account-wide numbers, and freshness is already in the
+# its own file, so two machines syncing at once cannot conflict. Publishing the
+# real hostname would leak asset naming and answer nothing: every machine
+# reports the same account-wide numbers, and freshness is already in the
 # timestamps.
 machine_id() {
   local f="$CCMON_DIR/machine-id"
@@ -24,8 +25,6 @@ machine_id() {
   cat "$f"
 }
 OUT="$CLAUDE_DIR/usage-snapshot.json"
-ENV_FILE="$CCMON_DIR/grafana-cloud.env"
-PUSH_LOG="$CCMON_DIR/last-push.txt"
 HISTORY_DIR="$CCMON_DIR/history"
 BACKOFF="$CCMON_DIR/backoff-until"
 
@@ -161,61 +160,3 @@ fi
 mv -f "$TMP" "$OUT"
 
 append_history
-
-# ------------------------------------------------------------------- push ---
-# Everything below is best-effort. A push failure must never fail the unit or
-# affect the snapshot the local widget reads.
-
-[ -r "$ENV_FILE" ] || exit 0
-# shellcheck disable=SC1090
-. "$ENV_FILE"
-: "${GRAFANA_OTLP_ENDPOINT:=}" "${GRAFANA_OTLP_USER:=}" "${GRAFANA_OTLP_TOKEN:=}"
-[ -n "$GRAFANA_OTLP_ENDPOINT" ] && [ -n "$GRAFANA_OTLP_TOKEN" ] || exit 0
-
-ACCOUNT="${CCMON_ACCOUNT:-unknown}"
-
-# OTLP wants nanoseconds. account/source go on the DATA POINTS, not the resource:
-# Mimir promotes only a few resource attributes to labels and files the rest
-# under target_info, where they are useless for querying these series.
-payload=$(jq -n \
-  --slurpfile snap "$OUT" \
-  --arg ts "${now_s}000000000" \
-  --arg account "$ACCOUNT" \
-  --arg source "$HOST" '
-  ($snap[0]) as $s
-  | [{key:"account", value:{stringValue:$account}},
-     {key:"source",  value:{stringValue:$source}}] as $base
-  | def gauge(name; points): {name: name, gauge: {dataPoints: points}};
-    def point(v; extra): {
-      asDouble: (v | tonumber),
-      timeUnixNano: $ts,
-      attributes: ($base + extra)
-    };
-    [
-      (if ($s.five_hour // null) != null
-        then gauge("claude_usage_five_hour_percent"; [point($s.five_hour; [])]) else empty end),
-      (if ($s.seven_day // null) != null
-        then gauge("claude_usage_seven_day_percent"; [point($s.seven_day; [])]) else empty end),
-      ( [ ($s.limits // [])[]
-          | select(.kind == "weekly_scoped" and .scope != null)
-          | point(.percent; [{key:"scope", value:{stringValue:.scope}}]) ] as $scoped
-        | if ($scoped | length) > 0
-          then gauge("claude_usage_scoped_percent"; $scoped) else empty end),
-      gauge("claude_usage_stale"; [point((if $s.ok then 0 else 1 end); [])])
-    ] as $metrics
-  | {resourceMetrics: [{
-      resource: {attributes: [
-        {key:"service.name", value:{stringValue:"claude-ccmon"}}
-      ]},
-      scopeMetrics: [{scope: {name:"ccmon", version:"1"}, metrics: $metrics}]
-    }]}
-  ' 2>/dev/null) || exit 0
-
-resp=$(curl -sS --max-time 20 -o - -w '\n%{http_code}' \
-  -X POST "$GRAFANA_OTLP_ENDPOINT" \
-  -u "$GRAFANA_OTLP_USER:$GRAFANA_OTLP_TOKEN" \
-  -H 'Content-Type: application/json' \
-  --data-binary "$payload" 2>&1)
-
-printf '%s\t%s\n%s\n' "$(date -Is)" "${resp##*$'\n'}" "${resp%$'\n'*}" > "$PUSH_LOG"
-exit 0

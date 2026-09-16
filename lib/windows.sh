@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Stage 8: the Windows desktop widget (WSL only).
+# Stage 6: the Windows desktop widget (WSL only).
 #
 # The widget is a compiled executable, not a PowerShell script, and that is
 # deliberate: Windows keys a tray icon's identity on (executable path + uID), so
@@ -16,7 +16,7 @@ CSC_CANDIDATES=(
 )
 
 stage_widget() {
-  stage 8 "Windows widget"
+  stage 6 "Windows widget"
 
   if [ "${IS_WSL:-0}" != 1 ]; then skip "not running under WSL"; return 0; fi
   if [ -z "${WIN_PROFILE:-}" ]; then skip "Windows profile not resolved"; return 0; fi

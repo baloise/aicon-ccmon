@@ -97,7 +97,6 @@ to re-run at any time, and re-running after a successful pass changes nothing.
 ```
 ./ccmon status      read-only summary
 ./ccmon serve       serve the wallboard locally, no GitHub sign-in needed
-./ccmon grafana     optional: also push samples to Grafana Cloud
 ./ccmon update      git pull, then re-apply whatever drifted
 ./ccmon uninstall   remove the timers and installed files
 ```
@@ -160,9 +159,6 @@ expires the snapshot is marked stale and keeps the last known values until you
 use Claude Code again.
 
 Nothing identifying reaches the repo: samples are timestamps and percentages.
-The Grafana Cloud token, if you ever add one, is written to
-`~/.claude/ccmon/grafana-cloud.env` — outside this repo, so it cannot be
-committed by accident.
 
 ## Licence
 
