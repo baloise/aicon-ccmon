@@ -143,6 +143,11 @@ const CCMON = (function () {
   // The factor explodes near both ends of a window (divide by a tiny elapsed or
   // a tiny remaining), so callers get a `verdict` that is capped and readable
   // rather than a number like "26x".
+  //
+  // `tone` is the single source of colour for every surface - wallboard bars and
+  // verdicts, the widget, the tray dot. Nothing is tinted by raw utilisation:
+  // a level threshold knows nothing about the clock, so it would eventually
+  // contradict the verdict sitting next to it.
   const TARGET = 95;
 
   function pace(utilisation, resetsAtSec, windowSec, nowSec) {

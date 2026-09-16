@@ -165,17 +165,22 @@ static class Program {
     static bool onTop = false;      // false = pinned to the desktop
     static IntPtr trayHandle = IntPtr.Zero;
 
-    static Brush LevelBrush(double? p, bool stale) {
-        if (stale || p == null) return bMuted;
-        if (p >= 80) return bCrit;
-        if (p >= 50) return bWarn;
-        return bGood;
+    // Colour comes from the pace tone and nowhere else - see pace() in
+    // chart-lib.js. Tinting by raw utilisation instead would put a threshold
+    // that cannot see the clock next to a verdict that can, and past the
+    // halfway mark of a window the two disagree: 51% used is on budget.
+    static Color ToneColor(string tone) {
+        if (tone == "good") return cGood;
+        if (tone == "warn") return cWarn;
+        if (tone == "crit") return cCrit;
+        return cMuted;
     }
-    static Color LevelColor(double? p, bool stale) {
-        if (stale || p == null) return cMuted;
-        if (p >= 80) return cCrit;
-        if (p >= 50) return cWarn;
-        return cGood;
+    // Ranked so the tray, which has one dot for two windows, can show the worse.
+    static int ToneRank(string tone) {
+        if (tone == "crit") return 3;
+        if (tone == "warn") return 2;
+        if (tone == "good") return 1;
+        return 0;               // muted: no reading, or a window too young to judge
     }
 
     [STAThread]
@@ -290,7 +295,7 @@ static class Program {
             if (values[i] != null && values[i] > 0) {
                 int fw = Math.Max(6, (int)(barW * Math.Min(values[i].Value, 100) / 100));
                 using (GraphicsPath f = RoundedPath(PAD, barY, fw, 6, 3))
-                    g.FillPath(LevelBrush(values[i], stale), f);
+                    g.FillPath(ToneBrush(pc.Tone), f);   // stale already resolves to muted
             }
             // Where usage would be if the window were spent evenly to 95%. The
             // gap between this tick and the bar end is the whole point.
@@ -403,7 +408,7 @@ static class Program {
         tray = new NotifyIcon();
         tray.ContextMenuStrip = menu;
         tray.Text = "ccmon";
-        tray.Icon = MakeIcon(null, true);
+        tray.Icon = MakeIcon("muted");   // until the first snapshot lands
         tray.Visible = true;
         tray.MouseClick += delegate(object s, MouseEventArgs e) {
             if (e.Button == MouseButtons.Left) ToggleTop();
@@ -432,12 +437,12 @@ static class Program {
         } catch { }
     }
 
-    static Icon MakeIcon(double? pct, bool stale) {
+    static Icon MakeIcon(string tone) {
         using (var bmp = new Bitmap(16, 16))
         using (var g = Graphics.FromImage(bmp)) {
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.Clear(Color.Transparent);
-            using (var b = new SolidBrush(LevelColor(pct, stale)))
+            using (var b = new SolidBrush(ToneColor(tone)))
                 g.FillEllipse(b, 2, 2, 12, 12);
             IntPtr h = bmp.GetHicon();
             // GetHicon leaks unless the previous handle is destroyed explicitly.
@@ -449,12 +454,16 @@ static class Program {
 
     static void UpdateTray() {
         bool stale = data == null || data.Stale;
-        double? worst = null;
-        if (data != null) {
-            if (data.FiveHour != null) worst = data.FiveHour;
-            if (data.SevenDay != null && (worst == null || data.SevenDay > worst)) worst = data.SevenDay;
+        // One dot, two windows: whichever is pacing worse gets to speak. Ranked
+        // by tone rather than by percentage, so a mid-week 60% on the weekly
+        // quota no longer outranks a session that is genuinely being overspent.
+        string tone = "muted";
+        if (!stale) {
+            string t5 = Pace.Of(data.FiveHour, data.FiveHourResets, WINDOW_5H).Tone;
+            string t7 = Pace.Of(data.SevenDay, data.SevenDayResets, WINDOW_7D).Tone;
+            tone = ToneRank(t7) > ToneRank(t5) ? t7 : t5;
         }
-        tray.Icon = MakeIcon(worst, stale);
+        tray.Icon = MakeIcon(tone);
         tray.Text = stale
             ? "ccmon - no data"
             : "ccmon  5h " + Math.Round(data.FiveHour ?? 0) + "%  7d " + Math.Round(data.SevenDay ?? 0) + "%";

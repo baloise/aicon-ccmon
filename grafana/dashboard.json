@@ -27,7 +27,7 @@
     {
       "type": "timeseries",
       "title": "7-day window",
-      "description": "Weekly quota across all models. Collapsed with max() because every machine reports the same account-wide number.",
+      "description": "Weekly quota across all models. Collapsed with max() because every machine reports the same account-wide number. Red marks 95%, the target ceiling: Grafana has no pace factor to colour by, so it only flags the one level that means trouble regardless of the clock.",
       "gridPos": { "h": 9, "w": 12, "x": 0, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
@@ -52,8 +52,7 @@
             "mode": "absolute",
             "steps": [
               { "color": "green", "value": null },
-              { "color": "#EAB308", "value": 50 },
-              { "color": "red", "value": 80 }
+              { "color": "red", "value": 95 }
             ]
           }
         },
@@ -63,7 +62,7 @@
     {
       "type": "timeseries",
       "title": "5-hour window",
-      "description": "Session quota. Sawtooths as each 5-hour window resets.",
+      "description": "Session quota. Sawtooths as each 5-hour window resets. Red marks the 95% target ceiling; see the 7-day panel.",
       "gridPos": { "h": 9, "w": 12, "x": 12, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
@@ -83,8 +82,7 @@
             "mode": "absolute",
             "steps": [
               { "color": "green", "value": null },
-              { "color": "#EAB308", "value": 50 },
-              { "color": "red", "value": 80 }
+              { "color": "red", "value": 95 }
             ]
           }
         },
@@ -110,7 +108,7 @@
           "max": 1,
           "custom": { "fillOpacity": 20, "lineWidth": 1, "drawStyle": "line", "lineInterpolation": "stepAfter" },
           "mappings": [
-            { "type": "value", "options": { "0": { "text": "live", "color": "green" }, "1": { "text": "stale", "color": "#EAB308" } } }
+            { "type": "value", "options": { "0": { "text": "live", "color": "#3987E5" }, "1": { "text": "stale", "color": "#8F8E86" } } }
           ]
         },
         "overrides": []

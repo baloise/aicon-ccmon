@@ -15,6 +15,9 @@
   finish this window at 95%". The pace tick on each bar marks where usage would
   be if the window were spent evenly; the gap between it and the bar end is the
   headroom.
+
+  Colour says that and only that. Every green, amber and red on the page comes
+  from the pace verdict, so none of them can disagree with another.
 -->
 <style>
 :root{
@@ -95,7 +98,10 @@ function resetPart(at, part) {
   return at > Math.floor(Date.now() / 1000) ? CCMON.resetAt(at) : '';
 }
 
-const pctColor = p => p >= 80 ? 'var(--crit)' : p >= 50 ? 'var(--warn)' : 'var(--good)';
+// The only colour scale on the page. Green/amber/red answer one question -
+// "am I on pace" - and never a second one, so a hue means the same thing
+// wherever it appears. Muted grey is "no pace reading": no data, or a window
+// too young to judge.
 const toneColor = t => t === 'crit' ? 'var(--crit)' : t === 'warn' ? 'var(--warn)'
                      : t === 'good' ? 'var(--good)' : 'var(--text-muted)';
 
@@ -105,9 +111,13 @@ const toneColor = t => t === 'crit' ? 'var(--crit)' : t === 'warn' ? 'var(--warn
 function hero(label, pct, resetsAt, windowSec) {
   const p = CCMON.pace(pct, resetsAt, windowSec);
   const shown = pct == null ? '--' : Math.round(pct);
-  // The number is a fact, so it wears text colour. Level is encoded by the bar,
-  // pace by the verdict - keeping two different meanings out of one hue.
-  const color = pct == null ? 'var(--text-muted)' : pctColor(pct);
+  // The number is a fact, so it wears text colour. The bar's colour is the
+  // verdict's, not the level's: level is already stated three ways - the
+  // numeral, the fill length, and where the fill ends relative to the tick -
+  // whereas pace was stated only in small text. A fixed threshold on level
+  // could only contradict the verdict anyway, since past the halfway mark of a
+  // window "51% used" is on budget, not a warning.
+  const color = toneColor(p.tone);
   const numColor = pct == null ? 'var(--text-muted)' : 'var(--text-primary)';
   return `<div class="hero">
     <div class="label">${label}</div>

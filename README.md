@@ -114,9 +114,10 @@ For the reverse-engineered API details and the reasoning behind the design, see
 Sits *on* the desktop rather than above your work: bottom of the Z-order, no
 taskbar entry, no alt-tab, and it never takes focus. Drag it wherever you like.
 
-The tray icon is how you reach it - its colour tracks whichever window is
-closest to its limit, and ccmon pins it to the notification area rather than
-leaving it in the hidden overflow:
+The tray icon is how you reach it - its colour is the pace verdict of whichever
+window is pacing worse, not how full either one is, so it stays green while you
+are within budget however much of the quota is already spent. ccmon pins it to
+the notification area rather than leaving it in the hidden overflow:
 
 | | |
 |---|---|
