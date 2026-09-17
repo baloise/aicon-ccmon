@@ -78,11 +78,17 @@ install_file() { # src dst mode label
   fixed "$verb $label -> $dst"
 }
 
-# owner/repo from the origin URL. Handles ssh, https, and https with a userinfo
-# component (https://user@github.com/...), which a plain scheme strip misses.
+# owner/repo from the origin URL. Handles scp-style ssh (git@host:owner/repo),
+# ssh:// with a port, https, and https with a userinfo component.
+#
+# Each rule peels off one thing and the order is what makes them safe together.
+# The previous version stripped the host twice on an scp-style URL - once with
+# the git@host: rule and again with the leading-path-segment rule - and so
+# returned "repo" where it meant "owner/repo". Everything downstream that asks
+# GitHub about the repository then got a 404 that reads as "no Pages here".
 repo_slug() {
   git -C "$CCMON_ROOT" remote get-url origin 2>/dev/null \
-    | sed -E 's#^[a-z]+://[^/@]*@?##; s#^git@[^:]*:##; s#^[^/]*/##; s#\.git$##'
+    | sed -E 's#^[a-z]+://##; s#^[^/@]*@##; s#:[0-9]+/#/#; s#:#/#; s#^[^/]*/##; s#\.git$##'
 }
 
 # Where the widget's menu should send a browser. The published page when there
