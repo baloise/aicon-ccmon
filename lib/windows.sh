@@ -1,5 +1,11 @@
 # shellcheck shell=bash
-# Stage 6: the Windows desktop widget (WSL only).
+# Stage 6 on WSL: the Windows desktop widget. Stage 2's WSL half lives here too,
+# because everything it discovers - the Windows profile, the UNC path, whether
+# interop works at all - exists only to serve this stage.
+#
+# WIN_INTEROP is not "this is WSL": lib/platform.sh already answers that. It is
+# "Windows can be reached from here", which is a different question and the one
+# stage_widget actually needs.
 #
 # The widget is a compiled executable, not a PowerShell script, and that is
 # deliberate: Windows keys a tray icon's identity on (executable path + uID), so
@@ -10,15 +16,44 @@
 # csc.exe ships with the .NET Framework on every Windows box, so building it
 # needs nothing installed.
 
+WIN_INTEROP=0
+UNC_PATH=""
+WIN_PROFILE=""
+
+platform_wsl() {
+  WIN_INTEROP=1
+  ok "WSL2 detected (${WSL_DISTRO_NAME:-unknown distro})"
+
+  if [ -d /mnt/c ]; then ok "Windows drive mounted at /mnt/c"
+  else skip "/mnt/c not mounted - Windows interop unavailable"; WIN_INTEROP=0; return 0; fi
+
+  UNC_PATH=$(wslpath -w "$CLAUDE_DIR" 2>/dev/null || true)
+  if [ -n "$UNC_PATH" ]; then
+    ok "snapshot reachable from Windows"
+    info "$UNC_PATH\\usage-snapshot.json"
+  else
+    skip "could not resolve a Windows path for $CLAUDE_DIR"
+  fi
+
+  WIN_PROFILE=$(cmd_exe_userprofile)
+  [ -n "$WIN_PROFILE" ] && ok "Windows profile: $WIN_PROFILE" || skip "Windows profile not resolved"
+}
+
+cmd_exe_userprofile() {
+  local p
+  p=$(powershell.exe -NoProfile -Command 'Write-Output $env:USERPROFILE' 2>/dev/null | tr -d '\r\n')
+  printf '%s' "$p"
+}
+
 CSC_CANDIDATES=(
   "/c/Windows/Microsoft.NET/Framework64/v4.0.30319/csc.exe"
   "/c/Windows/Microsoft.NET/Framework/v4.0.30319/csc.exe"
 )
 
 stage_widget() {
-  stage 6 "Windows widget"
+  stage 6 "Desktop widget"
 
-  if [ "${IS_WSL:-0}" != 1 ]; then skip "not running under WSL"; return 0; fi
+  if [ "${WIN_INTEROP:-0}" != 1 ]; then skip "no Windows to put a widget on"; return 0; fi
   if [ -z "${WIN_PROFILE:-}" ]; then skip "Windows profile not resolved"; return 0; fi
 
   local win_dir_win win_dir_unix
@@ -69,14 +104,14 @@ stage_widget() {
       # The old exe survives a failed build, so "the file exists" proves
       # nothing; only a changed mtime distinguishes a build from a no-op.
       local before out
-      before=$(stat -c %Y "$win_dir_unix/ccmon-widget.exe" 2>/dev/null || echo 0)
+      before=$(file_mtime "$win_dir_unix/ccmon-widget.exe")
       out=$("$csc" /nologo /target:winexe /optimize+ \
               "/out:$win_dir_win\\ccmon-widget.exe" \
               /r:System.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll \
               /r:System.Web.Extensions.dll \
               "$win_dir_win\\CcmonWidget.cs" 2>&1 | tr -d '\r')
       if [ -f "$win_dir_unix/ccmon-widget.exe" ] \
-         && [ "$(stat -c %Y "$win_dir_unix/ccmon-widget.exe" 2>/dev/null || echo 0)" != "$before" ]; then
+         && [ "$(file_mtime "$win_dir_unix/ccmon-widget.exe")" != "$before" ]; then
         fixed "built ccmon-widget.exe"
         if [ "$was_running" = 1 ]; then start_widget; fi
       else

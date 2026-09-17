@@ -1,5 +1,6 @@
 # shellcheck shell=bash
-# Stages 1-4: prerequisites, platform, network, Claude Code.
+# Stages 1, 3 and 4: prerequisites, network, Claude Code.
+# Stage 2 lives in lib/platform.sh, which is what decides the platform at all.
 
 stage_prereqs() {
   stage 1 "Prerequisites"
@@ -8,43 +9,11 @@ stage_prereqs() {
     command -v "$c" >/dev/null 2>&1 && ok "$c present" || { fail "$c missing"; missing+=("$c"); }
   done
   if [ ${#missing[@]} -gt 0 ]; then
-    hint "Install with: sudo apt-get install -y ${missing[*]}"
+    hint "Install with: $(pkg_hint "${missing[*]}")"
     return 1
   fi
 
   sched_prereqs || return 1
-}
-
-stage_platform() {
-  stage 2 "Platform"
-  if grep -qi microsoft /proc/version 2>/dev/null; then
-    IS_WSL=1
-    ok "WSL2 detected (${WSL_DISTRO_NAME:-unknown distro})"
-  else
-    IS_WSL=0
-    skip "not WSL - the Windows widget stage will be skipped"
-    return 0
-  fi
-
-  if [ -d /mnt/c ]; then ok "Windows drive mounted at /mnt/c"
-  else skip "/mnt/c not mounted - Windows interop unavailable"; IS_WSL=0; return 0; fi
-
-  UNC_PATH=$(wslpath -w "$CLAUDE_DIR" 2>/dev/null || true)
-  if [ -n "$UNC_PATH" ]; then
-    ok "snapshot reachable from Windows"
-    info "$UNC_PATH\\usage-snapshot.json"
-  else
-    skip "could not resolve a Windows path for $CLAUDE_DIR"
-  fi
-
-  WIN_PROFILE=$(cmd_exe_userprofile)
-  [ -n "$WIN_PROFILE" ] && ok "Windows profile: $WIN_PROFILE" || skip "Windows profile not resolved"
-}
-
-cmd_exe_userprofile() {
-  local p
-  p=$(powershell.exe -NoProfile -Command 'Write-Output $env:USERPROFILE' 2>/dev/null | tr -d '\r\n')
-  printf '%s' "$p"
 }
 
 stage_network() {

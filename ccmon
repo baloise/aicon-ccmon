@@ -12,11 +12,9 @@ SNAPSHOT="$CLAUDE_DIR/usage-snapshot.json"
 
 MODE=doctor
 ASSUME_YES=0
-IS_WSL=0
-UNC_PATH=""
-WIN_PROFILE=""
 
-for lib in common systemd detect install windows history pages; do
+# platform.sh first: it sets PLATFORM, which the rest of the libs read.
+for lib in common platform systemd detect install windows history pages; do
   # shellcheck source=/dev/null
   . "$CCMON_ROOT/lib/$lib.sh"
 done
