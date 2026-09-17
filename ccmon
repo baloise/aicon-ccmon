@@ -125,8 +125,14 @@ cmd_serve() {
   printf '%sccmon wallboard%s\n' "$C_BOLD" "$C_RESET"
   printf '  http://localhost:%s/\n' "$port"
   local ip
-  ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+  ip=$(lan_ip)
   [ -n "$ip" ] && printf '  http://%s:%s/   (from another machine on this network)\n' "$ip" "$port"
+  # The first bind trips macOS's "do you want python3 to accept incoming
+  # connections?", and until that is answered the LAN URL above just hangs.
+  if [ "$PLATFORM" = macos ] && [ -n "$ip" ]; then
+    printf '%s  macOS may ask whether python3 may accept incoming connections - allow it.%s\n' \
+      "$C_DIM" "$C_RESET"
+  fi
   printf '%sCtrl-C to stop.%s\n\n' "$C_DIM" "$C_RESET"
   exec python3 -m http.server "$port" --directory "$dir" --bind 0.0.0.0
 }
