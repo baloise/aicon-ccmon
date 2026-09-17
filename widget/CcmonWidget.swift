@@ -36,10 +36,20 @@ struct Palette {
 // tones are not lightened dark ones: --warn goes amber -> bronze precisely
 // because amber cannot make contrast on white.
 //
-// One deliberate asymmetry. The light set's --text-muted #82817c reaches only
-// 3.8:1 on #fcfcfb, which no amount of scrim can rescue, so the muted role takes
-// --text-secondary #52514e (7.7:1) instead. The dark side keeps --text-muted
-// #8f8e86, which measures 5.3:1 and is fine.
+// Two deliberate substitutions on the light side, both because the wallboard's
+// value cannot carry small text on a light surface, and both measured:
+//
+//   muted  --text-muted #82817c is 3.8:1 on #fcfcfb, which no amount of scrim
+//          can rescue, so the muted role takes --text-secondary #52514e (7.7:1).
+//   good   --good #1baf7a is 2.74:1 - the odd one out in a set whose warn is
+//          4.80 and crit 6.30, and on a real wallpaper it measured 1.0:1 at the
+//          alpha the widget had chosen, which is invisible. The verdict is the
+//          one thing on the panel that carries a message, so it cannot be the
+//          least legible thing on it. #15805c is 4.79:1, in line with the other
+//          two tones. The wallboard keeps #1baf7a, where it is used at headline
+//          size and passes on that basis.
+//
+// The dark side needs neither: its muted is 5.3:1 and its good 5.1:1.
 let paletteDark = Palette(
     surface: rgb(0x1a, 0x1a, 0x19), text: rgb(0xf5, 0xf5, 0xf3),
     muted:   rgb(0x8f, 0x8e, 0x86), track: rgb(0x38, 0x38, 0x34),
@@ -49,7 +59,7 @@ let paletteDark = Palette(
 let paletteLight = Palette(
     surface: rgb(0xfc, 0xfc, 0xfb), text: rgb(0x0b, 0x0b, 0x0b),
     muted:   rgb(0x52, 0x51, 0x4e), track: rgb(0xe6, 0xe5, 0xe1),
-    good:    rgb(0x1b, 0xaf, 0x7a), warn:  rgb(0xa1, 0x62, 0x07),
+    good:    rgb(0x15, 0x80, 0x5c), warn:  rgb(0xa1, 0x62, 0x07),
     crit:    rgb(0xb9, 0x1c, 0x1c), isDark: false)
 
 // How far the scrim fades from the centre of the panel to its edge, and the
@@ -247,24 +257,32 @@ func compositeLuminance(scrim: NSColor, alpha a: CGFloat, over d: Backdrop, dark
 // does: targeting the big number alone ships a legible 70% above an illegible
 // "updated 45s ago".
 //
-// The footer's requirement tracks the slider rather than sitting at a fixed
+// The secondary requirement tracks the slider rather than sitting at a fixed
 // 3:1, and that is not a detail. Pinned, it binds below roughly 7:1 on an
 // ordinary wallpaper and the whole lower half of the slider does nothing at all
 // - measured, 3:1, 4.5:1 and 7:1 all produced the same alpha. Scaling it keeps
 // the travel honest while preserving the ordering the design depends on:
 // secondary text is allowed to be secondary, but never by an unbounded amount.
-func mutedTarget(_ target: CGFloat) -> CGFloat { max(2.5, target * 0.6) }
+func secondaryTarget(_ target: CGFloat) -> CGFloat { max(2.5, target * 0.6) }
 
+// The tones are in here with the text, and leaving them out was a real bug: the
+// solver was choosing a palette on the strength of its headline while the
+// verdict underneath measured 1.0:1 against the same backdrop. On this panel the
+// verdict is the message - "faster 1.5x" is the reason the widget exists - so
+// the worst tone constrains the scrim exactly as the footer does.
 func minimumAlpha(_ p: Palette, target: CGFloat, over d: Backdrop) -> CGFloat {
     let yText = luminance(p.text), yMuted = luminance(p.muted)
+    let yTones = [p.good, p.warn, p.crit].map(luminance)
     // A thin scrim over a saturated wallpaper tints the surface, and a
     // green-tinted panel next to a green pace bar is a colour that looks like it
     // means something. Buy that off with a little more scrim.
     let bump = 1 + 0.12 * min(1, d.chroma / 0.5)
     func ok(_ a: CGFloat) -> Bool {
         let yc = compositeLuminance(scrim: p.surface, alpha: a, over: d, dark: p.isDark)
+        let secondary = secondaryTarget(target) * bump
         return contrast(yText, yc) >= target * bump
-            && contrast(yMuted, yc) >= mutedTarget(target) * bump
+            && contrast(yMuted, yc) >= secondary
+            && yTones.allSatisfy { contrast($0, yc) >= secondary }
     }
     if ok(0) { return SCRIM_FLOOR }
     var lo: CGFloat = 0, hi: CGFloat = 1
@@ -799,15 +817,22 @@ final class Controller: NSObject, NSMenuDelegate {
         if !d.confident { alpha = min(1, alpha + 0.08) }
         panel.theme = Theme(palette: polarity, alpha: alpha, halo: alpha < 0.55)
         panel.needsDisplay = true
-        if verbose {
+        // Only when the verdict actually moved. The slider is continuous, so
+        // logging every call turns one slow drag into hundreds of identical
+        // lines and buries the wallpaper changes worth reading.
+        let decision = String(format: "%@%.2f", polarity.isDark ? "d" : "l", alpha)
+        defer { lastDecision = decision }
+        if verbose, decision != lastDecision {
             FileHandle.standardError.write(
-                String(format: "ccmon: Y=%.3f sd=%.3f chroma=%.2f -> %@ alpha=%.2f\n",
-                       d.meanY, d.sdY, d.chroma, polarity.isDark ? "dark" : "light", alpha)
+                String(format: "ccmon: Y=%.3f sd=%.3f chroma=%.2f target=%.1f -> %@ alpha=%.2f\n",
+                       d.meanY, d.sdY, d.chroma, readability,
+                       polarity.isDark ? "dark" : "light", alpha)
                     .data(using: .utf8)!)
         }
     }
 
     var dwell = 0
+    var lastDecision = ""
     var verbose = UserDefaults.standard.bool(forKey: "verbose")
 
     func resample(settled: Bool) {
