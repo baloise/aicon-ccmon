@@ -50,8 +50,15 @@ ask_value() { # $1 = prompt, $2 = default -> echoes the value
 }
 
 # Install $1 -> $2 only when content differs. Reports which happened.
+#
+# Sets INSTALL_CHANGED so a caller can tell a copy from a no-op. The return code
+# cannot say it: 0 already means both "installed it" and "it was already
+# current", and the schedulers need the difference to know whether a reload is
+# owed. Reset on entry, or a later call inherits an earlier one's verdict.
+INSTALL_CHANGED=0
 install_file() { # src dst mode label
   local src=$1 dst=$2 mode=$3 label=$4
+  INSTALL_CHANGED=0
   if [ -f "$dst" ] && cmp -s "$src" "$dst"; then
     ok "$label is current"
     return 0
@@ -67,6 +74,7 @@ install_file() { # src dst mode label
   mkdir -p "$(dirname "$dst")"
   cp "$src" "$dst"
   chmod "$mode" "$dst"
+  INSTALL_CHANGED=1
   fixed "$verb $label -> $dst"
 }
 
