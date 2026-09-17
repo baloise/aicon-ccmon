@@ -25,7 +25,7 @@ case "$PLATFORM" in
   *) printf 'ccmon does not know how to run on %s.\n' "$(uname -s)" >&2; exit 1 ;;
 esac
 
-for lib in detect install windows history pages; do
+for lib in detect install windows macos history pages; do
   # shellcheck source=/dev/null
   . "$CCMON_ROOT/lib/$lib.sh"
 done
@@ -56,7 +56,12 @@ run_stages() {
   stage_network
   stage_claude || return 1
   stage_poller
-  stage_widget
+  # Stage 6 is the same slot on both platforms and a different lib underneath.
+  # Neither lib knows about the other, so the choice is made here.
+  case "$PLATFORM" in
+    macos) stage_macos_widget ;;
+    *)     stage_widget ;;
+  esac
   stage_statusline
   stage_history
   stage_pages
