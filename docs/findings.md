@@ -94,8 +94,12 @@ from the API.
 | Path | What |
 |---|---|
 | `~/.claude/ccmon/usage-poll.sh` | the poller (installed by `./ccmon`) |
+| `~/.claude/ccmon/creds.sh` | where the credentials live, shared with `./ccmon` |
 | `~/.claude/ccmon/statusline.sh` | the status line script |
 | `~/.claude/usage-snapshot.json` | the current reading, and what the widget displays |
+| `~/.claude/ccmon/{poll,sync}.log` | macOS only: what the agents printed, empty when well |
+| `~/.claude/ccmon/CcmonWidget.app` | macOS only: the widget, built in place |
+| `~/Library/LaunchAgents/com.ccmon.*` | macOS only: the poller, the sync job, the widget |
 
 The snapshot is also readable from Windows at
 `\\wsl.localhost\<distro>\home\<user>\.claude\usage-snapshot.json`, which is how
@@ -104,6 +108,87 @@ the widget gets at it without any credentials of its own.
 Claude Code additionally caches usage in `~/.claude.json` under
 `cachedUsageUtilization`, but only refreshes it while a session is active — which
 is precisely why ccmon polls on a timer instead of reading that file.
+
+## macOS keeps the credentials in the Keychain
+
+There is no `~/.claude/.credentials.json` on macOS. Claude Code stores the same
+JSON as the secret of a login-Keychain generic password:
+
+| | |
+|---|---|
+| service | `Claude Code-credentials` |
+| account | the OS user |
+| read it | `security find-generic-password -s "Claude Code-credentials" -a "$USER" -w` |
+
+Four things about that, each of which the port depends on:
+
+- **Attributes are free, the secret is not.** The same command *without* `-w`
+  returns the item's full attributes and never prompts, which is how
+  `creds_source` can check whether an item exists without putting a dialog on
+  screen. Exit code **44** is the Keychain's "no such item".
+- **"Always Allow" survives token refresh.** The ACL is a property of the item,
+  so recreating the item would reset it. Claude Code does not recreate it: on
+  this machine the item's creation date is four months older than its
+  modification date, which means `SecItemUpdate` in place. One grant holds.
+- **The ACL is keyed on the executable, not the caller.** Granting it adds
+  `/usr/bin/security` — Apple-signed, stable — to the item's trusted list, so a
+  read from your shell and a read from launchd → bash → security are the same
+  decision. That is what makes a check during `./ccmon` a valid gate for what
+  the scheduled agent will be able to do later. It also means the grant is not
+  narrow: anything running as you can then read the token without a prompt.
+- **`gui/<uid>`, never `user/<uid>`.** Only the GUI domain has an Aqua session
+  and therefore an unlocked login keychain. An agent bootstrapped from an ssh
+  session with nobody at the screen cannot read the credentials at all.
+
+The item is keyed on the OS user rather than on `CLAUDE_CONFIG_DIR`, so one
+login per user is the rule on macOS — pointing `CLAUDE_CONFIG_DIR` at an empty
+directory does not sandbox the credentials, it just falls through to the real
+ones. Claude Code behaves the same way, so this is the behaviour to match.
+
+**A trap with no error message:** a launchd agent carries no TCC consent of its
+own. If `CLAUDE_CONFIG_DIR` ever points inside `~/Documents`, `~/Desktop`,
+`~/Downloads` or `/Volumes`, the poller reads fine when you run it from Terminal
+and is denied when the agent runs it — silently, with a clean exit code. Stage 2
+refuses up front rather than leaving that to be discovered.
+
+## systemd and launchd, side by side
+
+| | systemd | launchd |
+|---|---|---|
+| unit of work | `.service` + `.timer` | one `.plist` |
+| identity | filename | the `Label` inside the file |
+| reload after an edit | `daemon-reload` | none — `bootout` then `bootstrap` |
+| every 5 minutes | `OnUnitActiveSec=5min` | `StartInterval 300` |
+| catch up after downtime | `Persistent=true` | inherent to `StartInterval` |
+| survives logout | `loginctl enable-linger` | no counterpart, by design |
+| next run | `systemctl list-timers` | **nothing** — only `runs` and `last exit code` |
+
+Three that cost time to learn:
+
+- **launchd expands nothing in a plist.** Not `~`, not `$HOME`, not even in
+  `StandardOutPath`. Rendering a per-user copy would cost the byte comparison
+  that makes `./ccmon` idempotent, so the path is handed to `bash -c` instead.
+- **`load -w` is a trap.** It writes to a per-user *disabled* list as a side
+  effect, and a label in that list will accept a `bootstrap` and then never run.
+  Use `bootstrap`/`bootout`, and never `disable` on the way out.
+- **`ProcessType Background` would be wrong here.** It subjects the job to Low
+  Power Mode deferral, and the resulting gap in the samples would look exactly
+  like a machine that was switched off — which is the one thing this project
+  exists to tell apart.
+
+There is no next-run time to report, so `./ccmon` reports how the last run ended
+instead, and proves the arrangement by kicking the job once and reading the
+snapshot it writes. On a platform where the scheduler's copy of the poller has a
+different credential story from yours, that proof is worth more than a next-run
+time would have been.
+
+## The access token is visible in `ps`
+
+`usage-poll.sh` passes the token to curl as `-H "Authorization: Bearer $token"`,
+which puts it in the process arguments, where anything running as you can read
+it — on every platform, and long before any of the Keychain work above.
+`curl --config -` with the header on stdin would fix it. Recorded here rather
+than quietly noticed twice.
 
 ## Publishing: GitHub Pages
 
@@ -134,7 +219,7 @@ regenerates `data/index.json` from all of them. That regeneration is
 deterministic given the same inputs, so two machines rebuilding it converge
 instead of fighting.
 
-## Why the widget is a compiled executable
+## Why the Windows widget is a compiled executable
 
 Windows identifies a tray icon by **(executable path + uID)**, and records it
 under `HKCU\Control Panel\NotifyIconSettings` — that registry key is what
@@ -158,6 +243,37 @@ Two related gotchas:
 - Windows PowerShell 5.1 decodes `.ps1` as ANSI unless the file has a BOM. A
   single em-dash in the old script turned into a cascading parse error. Keeping
   Windows-side sources ASCII-only avoids the whole class of problem.
+
+The macOS widget is compiled for a plainer reason - AppKit is not scriptable
+from the shell - but it arrives at the same shape: `swiftc` ships with the
+Command Line Tools, so `./ccmon` builds it in place and the repository never
+distributes a binary. Three things there are worth knowing:
+
+- **The bundle is for stability, not for function.** A bare executable can
+  create a status item, but `LSUIElement` in an `Info.plist` makes the process
+  accessory before any of our code runs, so there is no Dock-icon flicker, and
+  `codesign` signs bundles rather than loose executables.
+- **Re-signing after every build is mandatory on Apple silicon.** Gatekeeper
+  never sees this app — it triggers on the quarantine xattr, which a file
+  `swiftc` writes does not carry — but replacing the executable inside a signed
+  bundle leaves `CodeResources` describing a file that is gone, and the app is
+  then killed at launch with a message that blames nothing.
+- **`KeepAlive` must be `{SuccessfulExit: false}`, not `true`.** With `true`,
+  choosing Quit relaunches the widget within a second and the menu item looks
+  broken. The dictionary form lets a clean exit stay dead until the next login
+  while still restarting a crash, which is what the Windows Startup shortcut
+  amounts to. It is also why a rebuild stops the widget with `launchctl
+  bootout` and not `pkill`: a signalled exit is an unsuccessful one, so `pkill`
+  would hand the job straight back to launchd in the middle of the build.
+
+`kCGDesktopIconWindowLevel` is the level that behaves like `HWND_BOTTOM`: above
+the wallpaper and the Dock's own desktop window, below every ordinary window,
+and — where it matters — ordered in front of Finder's desktop window, so clicks
+reach the widget rather than the desktop underneath it. `kCGDesktopWindowLevel`,
+one step down, would be painted behind the desktop icons and would hand every
+click to Finder, which makes dragging silently do nothing. The level is exposed
+as `--level` because that ordering is the one thing here that cannot be settled
+without a screen to look at.
 
 ## Pace, not level
 
@@ -184,8 +300,16 @@ is shown to one decimal. The concrete figure (`%/h` for the 5-hour window,
 blow up, so both are displayed.
 
 The maths lives in `pace()` in `wallboard/chart-lib.js` and is mirrored in
-`class Pace` in `widget/CcmonWidget.cs`. Two implementations is a cost; sharing
-JavaScript with a compiled Windows widget is a bigger one.
+`class Pace` in `widget/CcmonWidget.cs` and `struct Pace` in
+`widget/CcmonWidget.swift`. Three implementations is a real cost; sharing
+JavaScript with two compiled widgets is a bigger one, and `bin/chart.sh` already
+inlines the same library for the same reason.
+
+Moving the verdict into the poller would delete two of the three and should
+still be resisted: pace is a function of the clock as much as of usage, and each
+widget recomputes it every few seconds precisely so the countdown and the pace
+tick keep moving *between* polls. A verdict carried in the snapshot would be
+five minutes stale at worst, and would make "resets in 3h 43m" a lie.
 
 ## No absolute figures exist
 

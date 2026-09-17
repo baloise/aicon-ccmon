@@ -26,14 +26,14 @@ of the fill is your headroom.
 flowchart LR
   API["Anthropic usage API"]
 
-  subgraph machine["each machine (WSL)"]
+  subgraph machine["each machine (WSL or macOS)"]
     POLL["poller<br/><i>every 5 min</i>"]
     SNAP[("usage-snapshot.json<br/><i>this machine's last reading</i>")]
     HIST[("history clone<br/><i>every machine's samples</i>")]
     SYNC["history-sync<br/><i>every 15 min</i>"]
   end
 
-  WIDGET["Windows widget"]
+  WIDGET["desktop widget"]
   STATUS["Claude Code status line"]
   CHART["ccmon chart.sh"]
   REPO[("GitHub repo<br/><b>data</b> branch")]
@@ -117,26 +117,39 @@ a monitor arriving or leaving, or a dock sends it home - the arrangement you
 placed it in no longer exists, and a corner is somewhere you can always find
 it again.
 
-The tray icon is how you reach it - its colour is the pace verdict of whichever
-window is pacing worse, not how full either one is, so it stays green while you
-are within budget however much of the quota is already spent. ccmon pins it to
-the notification area rather than leaving it in the hidden overflow:
+The status dot - in the notification area on Windows, the menu bar on macOS -
+is how you reach it. Its colour is the pace verdict of whichever window is
+pacing worse, not how full either one is, so it stays green while you are within
+budget however much of the quota is already spent:
 
 | | |
 |---|---|
 | left-click | toggles between the desktop and the front, and stays there |
-| right-click | bring to front / send to desktop · hide / show · open wallboard · refresh now · exit |
+| right-click | bring to front / send to desktop · hide / show · open wallboard · refresh now · update · quit |
 
 The first two menu entries are toggles that relabel themselves, so the menu
 always states what the click will do rather than what the state currently is.
 
-"Refresh now" runs the poller inside WSL rather than waiting for the next tick.
+"Refresh now" runs the poller rather than waiting for the next tick - inside
+WSL on Windows, directly on macOS.
 
-It is a small compiled executable, built on the fly by `./ccmon` with the
-`csc.exe` that ships with the .NET Framework. That is not gratuitous: Windows
-identifies a tray icon by (executable path + uID), so anything hosted by
-`powershell.exe` shares an identity with every other PowerShell tray icon and
-can never get its own row under Settings > Taskbar > Other system tray icons.
+Either way it is a small compiled executable, built on the fly by `./ccmon`
+with a compiler the operating system already has, so there is nothing to
+install and the repository ships source rather than a binary.
+
+**On Windows** that compiler is the `csc.exe` from the .NET Framework, and
+being compiled is not gratuitous: Windows identifies a tray icon by (executable
+path + uID), so anything hosted by `powershell.exe` shares an identity with
+every other PowerShell tray icon and can never get its own row under Settings >
+Taskbar > Other system tray icons. ccmon pins it there rather than leaving it in
+the hidden overflow.
+
+**On macOS** it is `swiftc` from the Command Line Tools, and the widget sits at
+the desktop-icon window level - above the wallpaper, below every ordinary
+window. Two things are worse here than on Windows, and neither has a fix an
+installer can apply: a menu bar item cannot be pinned, so on a notched Mac with
+a crowded menu bar it can end up under the notch; and there is no balloon tip,
+so "Update ccmon" opens a Terminal window and lets it speak for itself.
 
 ## The wallboard
 
@@ -157,8 +170,10 @@ the local option is a server rather than just opening the file.
 
 ## What it will not do
 
-ccmon reads `~/.claude/.credentials.json` but never refreshes or rotates the
-OAuth token — doing so could log Claude Code out from under you. When the token
+ccmon reads Claude Code's OAuth token - from `~/.claude/.credentials.json` on
+Linux and WSL, and from the login Keychain on macOS, where Claude Code keeps the
+same JSON as the secret of a generic password. It never refreshes or rotates that
+token — doing so could log Claude Code out from under you. When the token
 expires the snapshot is marked stale and keeps the last known values until you
 use Claude Code again.
 
