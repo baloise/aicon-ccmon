@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The ccmon sync job, as launchd sees it: the counterpart of
+  systemd/ccmon-sync.{service,timer}. Installed to
+  ~/Library/LaunchAgents by ./ccmon, which is also the only place the setup is
+  described.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.ccmon.sync</string>
+
+  <!--
+    launchd expands nothing in a plist - not ~, not $HOME, and not in
+    StandardOutPath either. Rendering a per-user copy would cost the byte
+    comparison that makes ./ccmon idempotent, so the path is handed to bash
+    instead, which launchd does give a HOME. One string then carries both the
+    program and its log, which is why there is no StandardOutPath below.
+  -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-c</string>
+    <string>exec "$HOME/.claude/ccmon/history-sync.sh" &gt;&gt;"$HOME/.claude/ccmon/sync.log" 2&gt;&amp;1</string>
+  </array>
+
+  <!--
+    systemd's RandomizedDelaySec=5min has no counterpart here and does not need
+    one: an agent's phase is set by when you logged in rather than by a shared
+    boot, and a collision costs one skipped push that --force-with-lease turns
+    into a retry on the next run.
+  -->
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StartInterval</key>
+  <integer>900</integer>
+
+  <!--
+    An agent inherits PATH=/usr/bin:/bin:/usr/sbin:/sbin, with no Homebrew in
+    it. jq is the hard dependency: /usr/bin/jq from macOS 15.4 onward, a
+    Homebrew prefix before that, and that prefix differs by architecture - so
+    name both rather than guess which Mac this is.
+  -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+</dict>
+</plist>

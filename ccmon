@@ -12,8 +12,20 @@ SNAPSHOT="$CLAUDE_DIR/usage-snapshot.json"
 MODE=doctor
 ASSUME_YES=0
 
-# platform.sh first: it sets PLATFORM, which the rest of the libs read.
-for lib in common platform systemd detect install windows history pages; do
+# common and platform first: platform.sh sets PLATFORM, which decides which
+# half of the scheduler pair the rest of the stages will be talking to.
+for lib in common platform; do
+  # shellcheck source=/dev/null
+  . "$CCMON_ROOT/lib/$lib.sh"
+done
+
+case "$PLATFORM" in
+  macos)     . "$CCMON_ROOT/lib/launchd.sh" ;;
+  wsl|linux) . "$CCMON_ROOT/lib/systemd.sh" ;;
+  *) printf 'ccmon does not know how to run on %s.\n' "$(uname -s)" >&2; exit 1 ;;
+esac
+
+for lib in detect install windows history pages; do
   # shellcheck source=/dev/null
   . "$CCMON_ROOT/lib/$lib.sh"
 done
