@@ -85,6 +85,22 @@ repo_slug() {
     | sed -E 's#^[a-z]+://[^/@]*@?##; s#^git@[^:]*:##; s#^[^/]*/##; s#\.git$##'
 }
 
+# Where the widget's menu should send a browser. The published page when there
+# is one, since the local server is only up while `ccmon serve` runs.
+#
+# Checking that the answer looks like a URL is not belt-and-braces: `gh api`
+# exits non-zero on a 404 but still prints the error body to stdout, so a
+# repository with no Pages site hands back a page of JSON that is perfectly
+# non-empty - and the widget was then launched with that as its --wallboard.
+wallboard_url() {
+  local u
+  u=$(gh api "repos/$(repo_slug)/pages" --jq '.html_url' 2>/dev/null)
+  case "$u" in
+    http://*|https://*) printf '%s' "$u" ;;
+    *) printf 'http://localhost:%s/' "${CCMON_PORT:-8787}" ;;
+  esac
+}
+
 summary() {
   printf '\n%s────────%s %s ok' "$C_DIM" "$C_RESET" "$N_OK"
   [ "$N_FIXED" -gt 0 ] && printf ', %s%s changed%s' "$C_YELLOW" "$N_FIXED" "$C_RESET"

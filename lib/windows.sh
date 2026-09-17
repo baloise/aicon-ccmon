@@ -74,8 +74,7 @@ stage_widget() {
   # a rebuild has to stop the running widget, and cannot start it again without
   # the arguments. The tray menu opens the wallboard; prefer the published copy,
   # since the local server is only up while `ccmon serve` runs.
-  WIDGET_URL=$(gh api "repos/$(repo_slug)/pages" --jq '.html_url' 2>/dev/null)
-  [ -n "$WIDGET_URL" ] || WIDGET_URL="http://localhost:${CCMON_PORT:-8787}/"
+  WIDGET_URL=$(wallboard_url)
   WIDGET_EXE="$win_dir_win\\ccmon-widget.exe"
   WIDGET_ARGS="--snapshot \"$UNC_PATH\\usage-snapshot.json\" --wallboard \"$WIDGET_URL\" --distro \"${WSL_DISTRO_NAME:-}\" --repo \"$CCMON_ROOT\""
 
