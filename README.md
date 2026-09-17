@@ -125,7 +125,7 @@ budget however much of the quota is already spent:
 | | |
 |---|---|
 | left-click | toggles between the desktop and the front, and stays there |
-| right-click | bring to front / send to desktop · hide / show · open wallboard · refresh now · update · quit |
+| right-click | move widget · bring to front / send to desktop · hide / show · open wallboard · refresh now · update · quit |
 
 The first two menu entries are toggles that relabel themselves, so the menu
 always states what the click will do rather than what the state currently is.
@@ -144,9 +144,15 @@ every other PowerShell tray icon and can never get its own row under Settings >
 Taskbar > Other system tray icons. ccmon pins it there rather than leaving it in
 the hidden overflow.
 
-**On macOS** it is `swiftc` from the Command Line Tools, and the widget sits at
-the desktop-icon window level - above the wallpaper, below every ordinary
-window. Two things are worse here than on Windows, and neither has a fix an
+**On macOS** it is `swiftc` from the Command Line Tools, and the widget sits
+above the wallpaper and *under* the desktop icons. That last part costs the
+drag: Finder's desktop window covers the whole screen and is above us, so it
+takes every click that passes over the panel, and the widget never sees one.
+"Move widget" in the menu lifts it just long enough to be dragged and drops it
+back the moment you let go. `--level icons` trades that back the other way -
+directly draggable, at the price of painting over the desktop icons.
+
+Two other things are worse here than on Windows, and neither has a fix an
 installer can apply: a menu bar item cannot be pinned, so on a notched Mac with
 a crowded menu bar it can end up under the notch; and there is no balloon tip,
 so "Update ccmon" opens a Terminal window and lets it speak for itself.

@@ -266,14 +266,30 @@ distributes a binary. Three things there are worth knowing:
   bootout` and not `pkill`: a signalled exit is an unsuccessful one, so `pkill`
   would hand the job straight back to launchd in the middle of the build.
 
-`kCGDesktopIconWindowLevel` is the level that behaves like `HWND_BOTTOM`: above
-the wallpaper and the Dock's own desktop window, below every ordinary window,
-and — where it matters — ordered in front of Finder's desktop window, so clicks
-reach the widget rather than the desktop underneath it. `kCGDesktopWindowLevel`,
-one step down, would be painted behind the desktop icons and would hand every
-click to Finder, which makes dragging silently do nothing. The level is exposed
-as `--level` because that ordering is the one thing here that cannot be settled
-without a screen to look at.
+There is no macOS level that is both under the desktop icons and clickable, and
+the window list says why:
+
+```
+Wallpaper                 -2147483625
+Dock wallpaper            -2147483624
+kCGDesktopWindowLevel     -2147483623   <- the widget, by default
+Finder's desktop window   -2147483603   full-screen, draws the icons, takes the clicks
+kCGDesktopIconWindowLevel -2147483603   same level; ordering breaks the tie
+```
+
+Finder's desktop window covers the whole screen, so anything below it never
+sees a click — dragging a panel down there does nothing at all, silently. At
+`kCGDesktopIconWindowLevel` the widget ties with that window and an
+`orderFrontRegardless()` puts it in front, which buys direct dragging and costs
+painting over the icons.
+
+ccmon defaults to the quieter half of that trade and gets the movement back
+through the menu: "Move widget" lifts the panel to the floating level, and the
+end of the next drag drops it straight back. `--level icons` takes the other
+half. This is the one thing in the port that could not be settled by reading,
+and it did not survive contact with a real desktop — the first arrangement
+overlaid the icons, which is not what a widget that calls itself part of the
+desktop should do.
 
 ## Pace, not level
 

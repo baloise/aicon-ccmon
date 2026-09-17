@@ -280,24 +280,32 @@ final class PanelView: NSView {
 final class Controller: NSObject, NSMenuDelegate {
     var snapshotPath = "", wallboardURL = "", pollerPath = "", updateCommand = ""
     var refreshSeconds: TimeInterval = 30
-    // .desktopIconWindow sits above the wallpaper and above the Dock's own
-    // desktop window, and below every ordinary window - which is the Windows
-    // HWND_BOTTOM position. It is settable because that is the one thing about
-    // this port that cannot be established without a screen to look at: if the
-    // widget ever turns up visible but unclickable, something is drawing the
-    // desktop above us and `--level normal` is the way out.
+    // Finder's desktop window - the one that draws the icons and handles clicks
+    // on the desktop - covers the whole screen at kCGDesktopIconWindowLevel.
+    // That forces a choice, because a window below it cannot receive the clicks
+    // that pass over it:
+    //
+    //   desktop  (default)  kCGDesktopWindowLevel, under the icons. Finder is
+    //                       above us everywhere, so the panel cannot be dragged
+    //                       directly - "Move widget" in the menu is how it moves.
+    //   icons                kCGDesktopIconWindowLevel, the same level as Finder's
+    //                       window, ordered in front of it. Draggable directly,
+    //                       at the price of painting over the desktop icons.
+    //   normal / floating    ordinary windows, for when neither of the above
+    //                       behaves on some future macOS.
     var levelName = "desktop"
 
     var window: DesktopWindow!
     var panel: PanelView!
     var statusItem: NSStatusItem!
     var menu: NSMenu!
-    var miTop: NSMenuItem!, miHide: NSMenuItem!
+    var miTop: NSMenuItem!, miHide: NSMenuItem!, miMove: NSMenuItem!
     var timer: Timer?
     var settle: Timer?
     var data: Snapshot?
     var everRead = false
     var onTop = false               // false = pinned to the desktop
+    var moving = false              // temporarily lifted so it can be dragged
     var lastGeometry: [NSRect] = []
 
     // ---- geometry ----
@@ -351,11 +359,12 @@ final class Controller: NSObject, NSMenuDelegate {
     // ---- window level ----
 
     func wantedLevel() -> NSWindow.Level {
-        if onTop { return .floating }
+        if onTop || moving { return .floating }
         switch levelName {
+        case "icons":    return NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)))
         case "normal":   return .normal
         case "floating": return .floating
-        default:         return NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)))
+        default:         return NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopWindow)))
         }
     }
 
@@ -416,6 +425,25 @@ final class Controller: NSObject, NSMenuDelegate {
     func updateMenuLabels() {
         miTop.title = onTop ? "Send to desktop" : "Bring to front"
         miHide.title = window.isVisible ? "Hide widget" : "Show widget"
+        miMove.title = moving ? "Done moving" : "Move widget"
+    }
+
+    // Under the desktop icons the panel never sees a click, so this lifts it
+    // just long enough to be dragged and drops it back where it was in the
+    // z-order the moment the drag ends. One menu item instead of the two
+    // trips through "Bring to front" and "Send to desktop" that it replaces.
+    @objc func toggleMoving() {
+        moving.toggle()
+        if moving, !window.isVisible { window.orderFrontRegardless() }
+        applyLevel()
+        updateMenuLabels()
+    }
+
+    func endMoving() {
+        guard moving else { return }
+        moving = false
+        applyLevel()
+        updateMenuLabels()
     }
 
     @objc func toggleTop() {
@@ -495,6 +523,8 @@ final class Controller: NSObject, NSMenuDelegate {
         }
         miTop = item("Bring to front", #selector(toggleTop))
         miHide = item("Hide widget", #selector(toggleHidden))
+        miMove = item("Move widget", #selector(toggleMoving))
+        menu.addItem(miMove)
         menu.addItem(miTop)
         menu.addItem(miHide)
         menu.addItem(.separator())
@@ -548,6 +578,7 @@ final class Controller: NSObject, NSMenuDelegate {
             // none - where the primary is the same answer Windows lands on.
             let vf = self.window.screen?.visibleFrame ?? self.workArea()
             self.window.setFrameOrigin(self.clamp(vf, self.window.frame.origin))
+            self.endMoving()
         }
         window.contentView = panel
         lastGeometry = geometry()
@@ -622,7 +653,7 @@ final class Controller: NSObject, NSMenuDelegate {
             // because a /target:winexe process has no console, while here this
             // goes to the agent's log where launchctl and Console can find it.
             let usage = "usage: CcmonWidget --snapshot <path> [--wallboard <url>] [--poller <path>]\n"
-                      + "                   [--update <path>] [--level desktop|normal|floating] [--refresh <s>]\n"
+                      + "                   [--update <path>] [--level desktop|icons|normal|floating] [--refresh <s>]\n"
             FileHandle.standardError.write(usage.data(using: .utf8)!)
             exit(2)
         }
