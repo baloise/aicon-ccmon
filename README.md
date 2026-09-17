@@ -111,10 +111,11 @@ For the reverse-engineered API details and the reasoning behind the design, see
 ## The desktop widget
 
 Sits *on* the desktop rather than above your work: bottom of the Z-order, no
-taskbar entry, no alt-tab, and it never takes focus. Left alone it lives in the
-top-right corner and re-anchors there whenever the desktop is resized; drag it
-somewhere else and it stays put, and a resolution change only pulls it back far
-enough to be wholly on screen.
+taskbar entry, no alt-tab, and it never takes focus. Home is the top-right
+corner: drag it anywhere you like and it stays there, but a resolution change,
+a monitor arriving or leaving, or a dock sends it home - the arrangement you
+placed it in no longer exists, and a corner is somewhere you can always find
+it again.
 
 The tray icon is how you reach it - its colour is the pace verdict of whichever
 window is pacing worse, not how full either one is, so it stays green while you
