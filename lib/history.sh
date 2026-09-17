@@ -39,27 +39,8 @@ stage_history() {
   install_file "$CCMON_ROOT/wallboard/index.html"    "$CCMON_DIR/wallboard.html" 644 "wallboard page"
   install_file "$CCMON_ROOT/wallboard/chart-lib.js"  "$CCMON_DIR/chart-lib.js"   644 "chart library"
 
-  local changed=0
-  for u in ccmon-sync.service ccmon-sync.timer; do
-    if [ -f "$UNIT_DIR/$u" ] && cmp -s "$CCMON_ROOT/systemd/$u" "$UNIT_DIR/$u"; then
-      ok "$u is current"
-    else
-      need "$u needs installing"
-      if confirm; then
-        mkdir -p "$UNIT_DIR"; cp "$CCMON_ROOT/systemd/$u" "$UNIT_DIR/$u"
-        fixed "wrote $UNIT_DIR/$u"; changed=1
-      fi
-    fi
-  done
-  [ "$changed" = 1 ] && systemctl --user daemon-reload
-
-  if systemctl --user is-active ccmon-sync.timer >/dev/null 2>&1; then
-    ok "sync timer enabled (every 15 min)"
-  else
-    need "sync timer is not enabled - samples accumulate locally but never push"
-    confirm && { systemctl --user enable --now ccmon-sync.timer >/dev/null 2>&1 \
-      && fixed "sync timer enabled" || fail "could not enable the sync timer"; }
-  fi
+  sched_install sync
+  sched_enable sync
 
   local n
   n=$(cat "$HISTORY_DIR"/data/*.jsonl 2>/dev/null | wc -l)

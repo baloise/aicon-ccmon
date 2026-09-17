@@ -12,26 +12,7 @@ stage_prereqs() {
     return 1
   fi
 
-  if systemctl --user show-environment >/dev/null 2>&1; then
-    ok "systemd user instance running"
-  else
-    fail "no systemd user instance - the timer cannot be installed"
-    hint "On WSL, enable systemd: add 'systemd=true' under [boot] in /etc/wsl.conf, then 'wsl --shutdown'."
-    return 1
-  fi
-
-  if [ "$(loginctl show-user "$USER" -p Linger --value 2>/dev/null)" = "yes" ]; then
-    ok "linger enabled (timer survives logout)"
-  else
-    need "linger is off - the timer stops when you log out"
-    if confirm; then
-      if loginctl enable-linger "$USER" 2>/dev/null; then
-        fixed "linger enabled"
-      else
-        fail "could not enable linger (needs sudo: sudo loginctl enable-linger $USER)"
-      fi
-    fi
-  fi
+  sched_prereqs || return 1
 }
 
 stage_platform() {

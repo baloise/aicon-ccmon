@@ -1,10 +1,8 @@
 # shellcheck shell=bash
-# Stages 5 and 7: poller + timer, and the Claude Code status line.
-
-UNIT_DIR="$HOME/.config/systemd/user"
+# Stages 5 and 7: poller + scheduled job, and the Claude Code status line.
 
 stage_poller() {
-  stage 5 "Poller and timer"
+  stage 5 "Poller and $(sched_noun)"
 
   # Migrate the pre-repo layout, if present.
   if [ -f "$CLAUDE_DIR/usage-poll.sh" ]; then
@@ -17,36 +15,9 @@ stage_poller() {
 
   install_file "$CCMON_ROOT/bin/usage-poll.sh" "$CCMON_DIR/usage-poll.sh" 755 "poller"
 
-  local changed=0
-  for u in claude-usage.service claude-usage.timer; do
-    if [ -f "$UNIT_DIR/$u" ] && cmp -s "$CCMON_ROOT/systemd/$u" "$UNIT_DIR/$u"; then
-      ok "$u is current"
-    else
-      need "$u needs installing"
-      if confirm; then
-        mkdir -p "$UNIT_DIR"
-        cp "$CCMON_ROOT/systemd/$u" "$UNIT_DIR/$u"
-        fixed "wrote $UNIT_DIR/$u"
-        changed=1
-      fi
-    fi
-  done
-  [ "$changed" = 1 ] && systemctl --user daemon-reload
-
-  if systemctl --user is-enabled claude-usage.timer >/dev/null 2>&1 \
-     && systemctl --user is-active claude-usage.timer >/dev/null 2>&1; then
-    ok "timer enabled and active"
-  else
-    need "timer is not enabled"
-    if confirm; then
-      systemctl --user enable --now claude-usage.timer >/dev/null 2>&1 \
-        && fixed "timer enabled" || fail "could not enable the timer"
-    fi
-  fi
-
-  local next
-  next=$(systemctl --user list-timers claude-usage.timer --no-pager 2>/dev/null | awk 'NR==2{print $1, $2, $3}')
-  [ -n "$next" ] && info "next run: $next"
+  sched_install poll
+  sched_enable poll
+  sched_status poll
 }
 
 stage_statusline() {
