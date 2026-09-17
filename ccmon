@@ -135,9 +135,16 @@ cmd_uninstall() {
   printf '%sccmon uninstall%s\n' "$C_BOLD" "$C_RESET"
   stage "" "Removing"
   sched_remove poll
-  rm -f "$CCMON_DIR/usage-poll.sh" "$CCMON_DIR/statusline.sh"
+  # Until now uninstall took the poller and left this one running, so an
+  # uninstalled ccmon went on committing and force-pushing to the data branch
+  # every fifteen minutes, indefinitely.
+  sched_remove sync
+  [ "$PLATFORM" = macos ] && widget_remove
+  rm -f "$CCMON_DIR/usage-poll.sh" "$CCMON_DIR/statusline.sh" "$CCMON_DIR/creds.sh" \
+        "$CCMON_DIR/history-sync.sh" "$CCMON_DIR/chart.sh"
   fixed "installed scripts removed"
-  info "kept $SNAPSHOT - delete it by hand if you want it gone"
+  info "kept $SNAPSHOT and $CCMON_DIR/history - the clone may still hold samples"
+  info "that were never pushed. Delete them by hand if you want them gone."
   summary
 }
 

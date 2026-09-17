@@ -207,6 +207,17 @@ widget_process() {
   fi
 }
 
+widget_remove() {
+  if ! widget_running && [ ! -f "$WIDGET_PLIST" ] && [ ! -d "$WIDGET_APP" ]; then
+    skip "widget was not installed"
+    return 0
+  fi
+  stop_widget
+  rm -f "$WIDGET_PLIST" "$WIDGET_SRC" "$WIDGET_UPDATE"
+  rm -rf "$WIDGET_APP"
+  fixed "widget removed"
+}
+
 widget_running() { pgrep -x CcmonWidget >/dev/null 2>&1; }
 
 start_widget() {
