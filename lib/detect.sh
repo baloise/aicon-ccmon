@@ -43,15 +43,22 @@ stage_claude() {
   if [ -d "$CLAUDE_DIR" ]; then ok "config dir $CLAUDE_DIR"
   else fail "no $CLAUDE_DIR - is Claude Code installed?"; return 1; fi
 
-  if [ ! -r "$CREDS" ]; then
-    fail "$CREDS not readable - log in with 'claude' first"
+  local src creds rc
+  src=$(creds_source)
+  if [ "$src" = none ]; then
+    fail "no Claude Code credentials - log in with 'claude' first"
     return 1
   fi
-  ok "credentials readable"
+  creds=$(creds_json 120); rc=$?
+  if [ "$rc" -ne 0 ] || [ -z "$creds" ]; then
+    fail "could not read the credentials ($(creds_reason "$rc"))"
+    return 1
+  fi
+  ok "credentials readable ($src)"
 
   local sub exp now_ms
-  sub=$(jq -r '.claudeAiOauth.subscriptionType // "none"' "$CREDS" 2>/dev/null)
-  exp=$(jq -r '.claudeAiOauth.expiresAt // 0' "$CREDS" 2>/dev/null)
+  sub=$(printf '%s' "$creds" | jq -r '.claudeAiOauth.subscriptionType // "none"' 2>/dev/null)
+  exp=$(printf '%s' "$creds" | jq -r '.claudeAiOauth.expiresAt // 0' 2>/dev/null)
   now_ms=$(( $(date +%s) * 1000 ))
 
   case "$sub" in

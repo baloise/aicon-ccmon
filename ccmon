@@ -7,7 +7,6 @@ set -uo pipefail
 CCMON_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 CCMON_DIR="$CLAUDE_DIR/ccmon"
-CREDS="$CLAUDE_DIR/.credentials.json"
 SNAPSHOT="$CLAUDE_DIR/usage-snapshot.json"
 
 MODE=doctor
@@ -18,6 +17,9 @@ for lib in common platform systemd detect install windows history pages; do
   # shellcheck source=/dev/null
   . "$CCMON_ROOT/lib/$lib.sh"
 done
+# Not in lib/: the installed poller sources this same file. See its header.
+# shellcheck source=bin/creds.sh
+. "$CCMON_ROOT/bin/creds.sh"
 
 usage() {
   cat <<EOF

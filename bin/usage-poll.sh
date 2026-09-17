@@ -10,7 +10,13 @@ set -uo pipefail
 
 CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 CCMON_DIR="$CLAUDE_DIR/ccmon"
-CREDS="$CLAUDE_DIR/.credentials.json"
+
+# Beside this script, wherever it is: ccmon installs the two together, and the
+# repo keeps them side by side in bin/. Resolving it this way rather than from
+# CCMON_DIR keeps the poller working when CLAUDE_CONFIG_DIR points at a fixture.
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=creds.sh
+. "$HERE/creds.sh" || { echo "no creds.sh beside the poller - run ./ccmon" >&2; exit 1; }
 # An opaque id, not the hostname. It exists only to keep each machine's data in
 # its own file, so two machines syncing at once cannot conflict. Publishing the
 # real hostname would leak asset naming and answer nothing: every machine
@@ -46,11 +52,12 @@ write_snapshot_stale() { # $1 = reason
 }
 
 fetch_usage() {
-  [ -r "$CREDS" ] || { echo "no-credentials"; return 1; }
+  local creds rc expires token
+  creds=$(creds_json); rc=$?
+  [ "$rc" -eq 0 ] && [ -n "$creds" ] || { creds_reason "$rc"; return 1; }
 
-  local expires token
-  expires=$(jq -r '.claudeAiOauth.expiresAt // 0' "$CREDS" 2>/dev/null)
-  token=$(jq -r '.claudeAiOauth.accessToken // empty' "$CREDS" 2>/dev/null)
+  expires=$(printf '%s' "$creds" | jq -r '.claudeAiOauth.expiresAt // 0' 2>/dev/null)
+  token=$(printf '%s' "$creds" | jq -r '.claudeAiOauth.accessToken // empty' 2>/dev/null)
   [ -n "$token" ] || { echo "no-token"; return 1; }
   [ "$expires" -gt "$now_ms" ] 2>/dev/null || { echo "token-expired"; return 1; }
 

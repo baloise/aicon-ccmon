@@ -13,6 +13,8 @@ stage_poller() {
     fi
   fi
 
+  # Before the poller, which sources it on every run.
+  install_file "$CCMON_ROOT/bin/creds.sh" "$CCMON_DIR/creds.sh" 644 "credential helper"
   install_file "$CCMON_ROOT/bin/usage-poll.sh" "$CCMON_DIR/usage-poll.sh" 755 "poller"
 
   sched_install poll
