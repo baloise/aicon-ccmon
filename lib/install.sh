@@ -20,6 +20,55 @@ stage_poller() {
   sched_install poll
   sched_enable poll
   sched_status poll
+  poller_proof
+}
+
+# Proof by running it, not by reading configuration back. On macOS the question
+# is whether the *scheduler's* copy of the poller can read the Keychain with
+# nobody there to click anything, and only letting the scheduler run it answers
+# that. It pays for itself on both platforms: ./ccmon now ends with real numbers
+# on screen instead of "the first sample arrives within five minutes".
+poller_proof() {
+  sched_active poll || return 0
+
+  local before age okflag reason i=0
+  before=$(file_mtime "$SNAPSHOT")
+  age=$(( $(date +%s) - before ))
+  if [ -f "$SNAPSHOT" ] && [ "$age" -lt 600 ]; then
+    ok "snapshot refreshed ${age}s ago"
+    return 0
+  fi
+
+  need "no recent snapshot - the $(sched_noun) has not produced one yet"
+  confirm || { info "it will try again on its own within 5 minutes"; return 0; }
+
+  sched_kick poll
+  while [ "$i" -lt 20 ]; do
+    [ "$(file_mtime "$SNAPSHOT")" != "$before" ] && break
+    sleep 1; i=$(( i + 1 ))
+  done
+  if [ "$(file_mtime "$SNAPSHOT")" = "$before" ]; then
+    fail "the $(sched_noun) wrote no snapshot within 20s"
+    [ -s "$CCMON_DIR/poll.log" ] && hint "$(tail -1 "$CCMON_DIR/poll.log")"
+    return 1
+  fi
+
+  okflag=$(jq -r '.ok // false'  "$SNAPSHOT" 2>/dev/null)
+  reason=$(jq -r '.reason // ""' "$SNAPSHOT" 2>/dev/null)
+  [ "$okflag" = true ] && { fixed "the $(sched_noun) fetched usage"; return 0; }
+
+  case "$reason" in
+    keychain-timeout)
+      fail "the $(sched_noun) sat waiting for a Keychain dialog"
+      hint "Answer it with Always Allow, then run ./ccmon again." ;;
+    keychain-denied)
+      fail "the Keychain refused the $(sched_noun) the credentials"
+      keychain_hint ;;
+    token-expired)
+      need "token expired - use Claude Code once and the poller recovers on its own" ;;
+    *)
+      fail "the $(sched_noun) ran and reported: ${reason:-unknown}" ;;
+  esac
 }
 
 stage_statusline() {
