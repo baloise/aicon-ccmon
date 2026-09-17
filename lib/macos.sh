@@ -143,6 +143,13 @@ widget_autostart() {
   <key>RunAtLoad</key>
   <true/>
   <!--
+    Unlike the poller's static plist this one is generated, so it can name a
+    path directly. Normally empty; it is where the widget explains what it made
+    of the wallpaper when `defaults write com.ccmon.widget verbose -bool YES`.
+  -->
+  <key>StandardErrorPath</key>
+  <string>$(xml_escape "$CCMON_DIR/widget.log")</string>
+  <!--
     The dictionary form, not KeepAlive true. With true, Quit relaunches the
     widget within a second and the menu item looks broken; with this, a clean
     exit stays dead until the next login while a crash is restarted - which is
@@ -213,7 +220,7 @@ widget_remove() {
     return 0
   fi
   stop_widget
-  rm -f "$WIDGET_PLIST" "$WIDGET_SRC" "$WIDGET_UPDATE"
+  rm -f "$WIDGET_PLIST" "$WIDGET_SRC" "$WIDGET_UPDATE" "$CCMON_DIR/widget.log"
   rm -rf "$WIDGET_APP"
   fixed "widget removed"
 }
