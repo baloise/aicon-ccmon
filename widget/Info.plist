@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Staged verbatim into CcmonWidget.app/Contents/ by lib/macos.sh.
+
+  The per-install arguments - snapshot path, wallboard URL, repo - are
+  deliberately NOT here. They live only in the LaunchAgent, mirroring the
+  Windows .lnk's TargetPath + Arguments as the single place the installer has
+  to compare to know whether it is out of date.
+-->
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>            <string>com.ccmon.widget</string>
+  <key>CFBundleName</key>                  <string>ccmon</string>
+  <key>CFBundleExecutable</key>            <string>CcmonWidget</string>
+  <key>CFBundlePackageType</key>           <string>APPL</string>
+  <key>CFBundleShortVersionString</key>    <string>1.0</string>
+  <key>CFBundleVersion</key>               <string>1</string>
+  <key>CFBundleInfoDictionaryVersion</key> <string>6.0</string>
+  <key>LSMinimumSystemVersion</key>        <string>13.0</string>
+  <!-- Accessory from the first instruction, so there is no Dock-icon flicker
+       before setActivationPolicy runs. -->
+  <key>LSUIElement</key>                   <true/>
+  <key>NSPrincipalClass</key>              <string>NSApplication</string>
+  <key>NSHighResolutionCapable</key>       <true/>
+</dict>
+</plist>
