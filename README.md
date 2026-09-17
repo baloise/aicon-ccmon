@@ -152,6 +152,15 @@ takes every click that passes over the panel, and the widget never sees one.
 back the moment you let go. `--level icons` trades that back the other way -
 directly draggable, at the price of painting over the desktop icons.
 
+Its colours come from the wallpaper underneath it. The widget samples the pixels
+behind the panel and asks how little scrim it can wear and still be read: a light
+wallpaper gets the light palette, a dark one the dark palette, and the opacity is
+whatever the contrast actually requires - measured on one ordinary photo, 26%
+rather than the fixed 90% Windows uses. "Readability" in the menu sets the target
+the text must hit, not the opacity, so there is no setting at which it becomes
+unreadable; Appearance pins the palette if the measurement disagrees with taste,
+and can turn the whole thing off.
+
 Two other things are worse here than on Windows, and neither has a fix an
 installer can apply: a menu bar item cannot be pinned, so on a notched Mac with
 a crowded menu bar it can end up under the notch; and there is no balloon tip,

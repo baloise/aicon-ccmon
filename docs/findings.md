@@ -291,6 +291,74 @@ and it did not survive contact with a real desktop — the first arrangement
 overlaid the icons, which is not what a widget that calls itself part of the
 desktop should do.
 
+## Reading the wallpaper
+
+`NSWorkspace.desktopImageURL(for:)` and `desktopImageOptions(for:)` need **no TCC
+permission** - which is what makes an adaptive widget possible at all, since a
+launchd agent has no consent of its own. Two things cost time:
+
+**The layout has to be replicated, not approximated.** The options carry
+`.imageScaling`, `.allowClipping` and `.fillColor`, and macOS letterboxes an
+image whose aspect does not match the screen. On the machine this was written on,
+a 4032x1908 photo on a 1920x1080 screen with clipping off is drawn at y=85.7,
+height 908.6, with fill colour above and below - so **20% of the widget's area at
+its home position is over fill colour rather than over the image**. A naive
+proportional sample reads the wrong pixels and is confidently wrong.
+
+**The wallpaper is resolved once into a small proxy**, screen-shaped, at one
+pixel per 4 screen points. The fill colour goes down first and the image is drawn
+into its computed rect, so the letterbox case needs no special handling anywhere
+downstream, and sampling on every drag is a rect read rather than an image
+decode. `CGImageSource` rather than `NSImage`: it decodes at reduced scale
+instead of paying ~30MB for a phone photo, and a frame count of zero is a clean
+way to recognise a video wallpaper it cannot open at all.
+
+What cannot be done: a time-of-day `.heic` carries up to 16 frames and
+WindowServer picks between them from the sun's position, which is not observable.
+The widget picks by system appearance and charges a confidence penalty - a
+guessed frame buys a little extra scrim. There is also no wallpaper-changed
+notification, so the URL and its mtime are polled, every fourth tick.
+
+### Contrast, and why the footer sets the price
+
+Every element on the panel is measured against the same surface, so
+`achieved/nominal` is identical for all of them - the element's own luminance
+cancels. One number therefore describes what the wallpaper costs the whole
+palette, and each requirement is a floor on it.
+
+Two of them, not one. The slider's ratio is about the headline, but the muted
+footer binds first: on a real wallpaper, targeting only the big number gives a
+legible `70%` above an illegible `updated 45s ago`. The footer's requirement
+tracks the slider rather than sitting at a fixed 3:1 - pinned, it binds below
+about 7:1 and the lower half of the slider does nothing at all, which the
+measurements showed before anyone had to notice it by eye.
+
+Compositing is done on **gamma-encoded channels**, not on luminances. `lin()` is
+convex, so a linear-light model is always optimistic for a light scrim over a
+dark backdrop - the one case where being wrong means unreadable text.
+
+Measured on one ordinary photo (mean luminance 0.41, sd 0.21):
+
+| | dark palette | light palette |
+|---|---|---|
+| alpha at a 4.5:1 target | 0.75 | **0.26** |
+
+The light palette costs a third of the ink, which is why polarity is chosen by
+**which palette reaches the target with less alpha** rather than by a luminance
+threshold. There is no constant to tune, and least-ink is the definition of low
+profile.
+
+One defect this surfaced, inherited rather than introduced: the light set's
+`--good` `#1baf7a` is **2.74:1** on `#fcfcfb`, unreachable at any opacity. It is
+used at headline size on the wallboard, where 3:1 for large text applies; the
+widget draws the verdict at 10pt, where it does not. A halo - zero offset, 2.5pt
+blur, opposite polarity - is what carries it, applied to any tone the palette
+cannot hold on its own.
+
+**Windows stays dark-only on purpose.** `desktopImageURL` has no Win32
+counterpart worth the code, so the widgets agree per palette by Windows only ever
+using the dark one.
+
 ## Pace, not level
 
 The project's question is not "how much have I used" but "am I on track to use
