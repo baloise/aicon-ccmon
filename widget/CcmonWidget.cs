@@ -28,6 +28,46 @@ static class Native {
     public static void Sink(IntPtr h) { SetWindowPos(h, BOTTOM, 0, 0, 0, 0, NOSIZE | NOMOVE | NOACTIVATE); }
     public static void Lift(IntPtr h) { SetWindowPos(h, TOPMOST, 0, 0, 0, 0, NOSIZE | NOMOVE | NOACTIVATE); }
     public static void Drop(IntPtr h) { SetWindowPos(h, NOTOPMOST, 0, 0, 0, 0, NOSIZE | NOMOVE | NOACTIVATE); }
+
+    // System.Windows.Forms.Screen caches both the monitor list and each
+    // monitor's work area, and the invalidation hangs off SystemEvents - the
+    // same events we are reacting to, with no ordering guarantee between their
+    // handlers and ours. Reading a stale work area is how the widget ends up
+    // anchored to a screen that no longer exists, so ask Win32 every time.
+    [StructLayout(LayoutKind.Sequential)]
+    struct RECT { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)]
+    struct MONITORINFO { public int cbSize; public RECT rcMonitor, rcWork; public uint dwFlags; }
+
+    [DllImport("user32.dll")]
+    static extern bool SystemParametersInfo(uint action, uint param, ref RECT v, uint winIni);
+    [DllImport("user32.dll")]
+    static extern IntPtr MonitorFromWindow(IntPtr h, uint flags);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    static extern bool GetMonitorInfo(IntPtr monitor, ref MONITORINFO mi);
+
+    const uint SPI_GETWORKAREA = 0x0030, MONITOR_DEFAULTTONEAREST = 2;
+
+    static Rectangle Of(RECT r) {
+        return Rectangle.FromLTRB(r.Left, r.Top, r.Right, r.Bottom);
+    }
+
+    // The primary monitor's work area - the desktop minus the taskbar.
+    public static Rectangle PrimaryWorkArea() {
+        RECT r = new RECT();
+        if (SystemParametersInfo(SPI_GETWORKAREA, 0, ref r, 0)) return Of(r);
+        return Screen.PrimaryScreen.WorkingArea;            // cannot happen; not worth crashing over
+    }
+
+    // The work area of whichever monitor the window is mostly on. NEAREST means
+    // a window left behind on an unplugged monitor resolves to a real one.
+    public static Rectangle WorkAreaFor(IntPtr h) {
+        MONITORINFO mi = new MONITORINFO();
+        mi.cbSize = Marshal.SizeOf(typeof(MONITORINFO));
+        IntPtr m = MonitorFromWindow(h, MONITOR_DEFAULTTONEAREST);
+        if (m != IntPtr.Zero && GetMonitorInfo(m, ref mi)) return Of(mi.rcWork);
+        return PrimaryWorkArea();
+    }
 }
 
 class Snapshot {
@@ -163,7 +203,6 @@ static class Program {
     static Snapshot data;
     static bool everRead = false;
     static bool onTop = false;      // false = pinned to the desktop
-    static bool placedByHand = false;   // true once dragged: their spot, not ours
     static IntPtr trayHandle = IntPtr.Zero;
 
     // Colour comes from the pace tone and nowhere else - see pace() in
@@ -191,15 +230,46 @@ static class Program {
             Math.Max(wa.Top  + MARGIN, Math.Min(p.Y, wa.Bottom - H - MARGIN)));
     }
 
-    // Windows leaves a borderless, never-activated tool window where it was when
-    // the desktop is resized, so a narrower screen leaves it hanging off the
-    // right edge. Re-anchor it if it is still where we put it; if the user has
-    // dragged it somewhere, respect that and only pull it back into view.
-    static void Reposition() {
-        Rectangle wa = placedByHand
-            ? Screen.FromRectangle(form.Bounds).WorkingArea   // their monitor, if it is still there
-            : Screen.PrimaryScreen.WorkingArea;
-        form.Location = placedByHand ? ClampInto(wa, form.Location) : HomeIn(wa);
+    // Windows leaves a borderless, never-activated tool window exactly where it
+    // was when the desktop changes shape, so the widget has to move itself.
+    //
+    // Always home, even when it has been dragged: the arrangement it was placed
+    // in no longer exists, and after switching to a single wide screen its old
+    // spot is nowhere in particular - the middle of the width, in the report
+    // that prompted this. A hand-placed position survives everything else.
+    static void GoHome() {
+        lastWorkArea = Native.PrimaryWorkArea();
+        form.Location = HomeIn(lastWorkArea);
+    }
+
+    static Rectangle lastWorkArea = Rectangle.Empty;
+    static Timer settle;
+
+    // One Win+P, unplug or dock produces a burst of events, and the work area is
+    // final at none of them: the resolution changes first and the taskbar
+    // settles afterwards, so anything read on the event itself describes a
+    // desktop that is still moving. Each event restarts a short timer; only the
+    // last one repositions.
+    //
+    // The Desktop preference category also covers wallpaper, so the tick
+    // compares the work area it finds against the last one and does nothing
+    // unless the geometry really moved - otherwise changing the background
+    // would send a hand-placed widget home.
+    static void DisplayChanged() {
+        if (settle == null) {
+            settle = new Timer();
+            settle.Interval = 900;
+            settle.Tick += delegate {
+                settle.Stop();
+                if (Native.PrimaryWorkArea() != lastWorkArea) GoHome();
+            };
+        }
+        settle.Stop();
+        settle.Start();
+    }
+
+    static void OnDisplayEvent() {
+        try { form.BeginInvoke((MethodInvoker)delegate { DisplayChanged(); }); } catch { }
     }
 
     // Ranked so the tray, which has one dot for two windows, can show the worse.
@@ -242,16 +312,22 @@ static class Program {
         form.BackColor = cSurface;
         form.Opacity = 0.90;
         form.Size = new Size(W, H);
-        form.Location = HomeIn(Screen.PrimaryScreen.WorkingArea);
+        lastWorkArea = Native.PrimaryWorkArea();
+        form.Location = HomeIn(lastWorkArea);
         form.Region = new Region(RoundedPath(0, 0, W, H, RADIUS));
         form.Paint += Paint;
         HookDrag();
 
-        // Fires on a resolution change, a monitor being added or removed, and a
-        // dock or undock. Raised off the UI thread, hence the marshalling.
-        Microsoft.Win32.SystemEvents.DisplaySettingsChanged += delegate {
-            try { form.BeginInvoke((MethodInvoker)delegate { Reposition(); }); } catch { }
-        };
+        // DisplaySettingsChanged is the resolution, monitors arriving and
+        // leaving, and dock or undock. UserPreferenceChanged/Desktop is the work
+        // area itself moving - a taskbar change, which lands after the display
+        // one and is what makes the first reading wrong. Both are raised off the
+        // UI thread, hence the marshalling.
+        Microsoft.Win32.SystemEvents.DisplaySettingsChanged += delegate { OnDisplayEvent(); };
+        Microsoft.Win32.SystemEvents.UserPreferenceChanged +=
+            delegate(object src, Microsoft.Win32.UserPreferenceChangedEventArgs ev) {
+                if (ev.Category == Microsoft.Win32.UserPreferenceCategory.Desktop) OnDisplayEvent();
+            };
 
         BuildTray();
 
@@ -262,6 +338,11 @@ static class Program {
             form.Invalidate();
             UpdateTray();
             UpdateZOrder();
+            // Belt and braces for the events above: a display change that
+            // produced none, or produced them all before the desktop had
+            // finished moving, is caught here within one refresh instead of
+            // leaving the widget stranded until the next logon.
+            if (Native.PrimaryWorkArea() != lastWorkArea) GoHome();
             if (everRead && timer.Interval != refreshSeconds * 1000)
                 timer.Interval = refreshSeconds * 1000;
         };
@@ -509,10 +590,9 @@ static class Program {
         form.MouseUp += delegate {
             if (dragging) {
                 dragging = false;
-                placedByHand = true;
                 // A drag can also end off-screen, on any number of monitors.
-                form.Location = ClampInto(Screen.FromRectangle(form.Bounds).WorkingArea,
-                                          form.Location);
+                // It survives until the desktop next changes shape.
+                form.Location = ClampInto(Native.WorkAreaFor(form.Handle), form.Location);
             }
         };
         form.MouseMove += delegate {
