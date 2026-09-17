@@ -21,6 +21,16 @@ COMPACT_AFTER="${CCMON_COMPACT_AFTER:-100}"
 MINE="data/$HOST.jsonl"
 MINE_LATEST="data/$HOST.latest.json"
 
+# Two reasons this is not just `wc -l < "$f"`. BSD pads the count with spaces,
+# and the manifest below has to come out byte-identical on every platform or a
+# Mac and a Linux box rewrite it at each other on every sync, for ever. And a
+# failed input redirection is reported by the shell itself, before wc can be
+# silenced, so a missing file would otherwise leak a line into the log.
+count_lines() { # $1 = path
+  [ -f "$1" ] || { printf '0'; return 0; }
+  wc -l < "$1" 2>/dev/null | tr -d ' \n'
+}
+
 [ -d "$HISTORY_DIR/.git" ] || { echo "no history clone at $HISTORY_DIR" >&2; exit 0; }
 cd "$HISTORY_DIR" || exit 0
 
@@ -74,7 +84,7 @@ if ls data/*.latest.json >/dev/null 2>&1; then
     first=1
     for l in data/*.latest.json; do
       h=$(basename "$l" .latest.json)
-      n=$(wc -l < "data/$h.jsonl" 2>/dev/null || echo 0)
+      n=$(count_lines "data/$h.jsonl")
       [ $first -eq 1 ] || echo ','
       first=0
       printf '    {"source": %s, "file": "data/%s.jsonl", "samples": %s, "latest": %s}' \
@@ -91,7 +101,7 @@ if git diff --cached --quiet 2>/dev/null; then
   exit 0   # nothing new since the last sync
 fi
 
-n=$(wc -l < "$MINE" 2>/dev/null || echo 0)
+n=$(count_lines "$MINE")
 git commit -q -m "ccmon: $n samples" || exit 0
 
 # "data" is both a branch and a directory here, so name the ref unambiguously.
@@ -105,7 +115,7 @@ fi
 lease=$(git rev-parse origin/data 2>/dev/null)
 git checkout -q --orphan _compact
 git add -A
-git commit -q -m "ccmon data, compacted $(date -I) ($(cat data/*.jsonl 2>/dev/null | wc -l) samples)"
+git commit -q -m "ccmon data, compacted $(date -I) ($(cat data/*.jsonl 2>/dev/null | wc -l | tr -d ' ') samples)"
 git branch -q -M _compact data
 if git push -q --force-with-lease="data:$lease" origin data 2>/dev/null; then
   git reflog expire --expire=now --all >/dev/null 2>&1

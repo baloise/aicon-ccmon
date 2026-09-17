@@ -43,7 +43,7 @@ stage_history() {
   sched_enable sync
 
   local n
-  n=$(cat "$HISTORY_DIR"/data/*.jsonl 2>/dev/null | wc -l)
+  n=$(cat "$HISTORY_DIR"/data/*.jsonl 2>/dev/null | wc -l | tr -d ' ')
   if [ "$n" -gt 0 ]; then
     ok "$n samples recorded"
     info "Chart them with: $CCMON_DIR/chart.sh   (writes $CCMON_DIR/chart.html)"
