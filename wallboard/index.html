@@ -145,8 +145,9 @@ function hero(label, pct, resetsAt, windowSec, who) {
 // used Claude - and the difference is not recoverable from this data. The quota
 // is account-wide, so every machine records the same five_hour and seven_day
 // figures whether it was being typed at or merely switched on; nothing in a
-// sample says who spent the tokens. "reporting" is therefore the strongest
-// claim the numbers support.
+// sample says who spent the tokens. The count is therefore "machines that put a
+// sample in", which is the strongest claim the numbers support - the label says
+// only "machines" and deliberately does not say "used Claude".
 function reporting(rowsPerSource, from, to) {
   return rowsPerSource.filter(rows => rows.some(d => d.t >= from && d.t <= to)).length;
 }
@@ -202,7 +203,7 @@ async function load() {
   const total = sources.length;
   const count = (resetsAt, windowSec) => {
     const n = reporting(rowsPerSource, windowStart(resetsAt, windowSec, now), now);
-    return total > 1 ? `${n} of ${total} machines reporting` : `${n} machine reporting`;
+    return total > 1 ? `${n} of ${total} machines` : `${n} machine`;
   };
 
   el('body').innerHTML = `
@@ -211,9 +212,8 @@ async function load() {
              count(latest.five_hour_resets_at, CCMON.WINDOW_5H))}
       ${hero('7-day, all models', latest.seven_day, latest.seven_day_resets_at, CCMON.WINDOW_7D,
              count(latest.seven_day_resets_at, CCMON.WINDOW_7D))}
-      ${/* same window and therefore the same machines as the row above - saying
-            it twice would only add noise */ ''}
-      ${scopeKey ? hero('7-day, ' + scopeKey, scopedNow, latest.seven_day_resets_at, CCMON.WINDOW_7D) : ''}
+      ${scopeKey ? hero('7-day, ' + scopeKey, scopedNow, latest.seven_day_resets_at, CCMON.WINDOW_7D,
+             count(latest.seven_day_resets_at, CCMON.WINDOW_7D)) : ''}
     </div>
     <div class="charts">
       <div class="card"><h2>7-day window</h2><p class="sub">Weekly quota</p><div id="c1"></div></div>
