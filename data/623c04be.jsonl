@@ -329,3 +329,6 @@
 {"t":1789767270,"five_hour":0.0,"seven_day":96.0,"scoped":{"Fable":61},"ok":true}
 {"t":1789767570,"five_hour":0.0,"seven_day":96.0,"scoped":{"Fable":61},"ok":true}
 {"t":1789806096,"five_hour":null,"seven_day":null,"scoped":{},"ok":false}
+{"t":1789806398,"five_hour":null,"seven_day":null,"scoped":{},"ok":false}
+{"t":1789806698,"five_hour":null,"seven_day":null,"scoped":{},"ok":false}
+{"t":1789806998,"five_hour":0.0,"seven_day":0.0,"scoped":{"Fable":0},"ok":true}
