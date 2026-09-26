@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Claude usage — ccmon</title>
+<!--
+  ccmon wallboard. Fetches its data relative to itself, so the same file works
+  served from GitHub Pages or from `ccmon serve`. It will NOT work opened as a
+  file:// URL - fetch is blocked there; that is why the local case needs a server.
+
+  Black by default - this hangs on a wall. ?theme=light if you want the light
+  variant at a desk.
+
+  The headline is not "how much have I used" but "speed up or slow down to
+  finish this window at 95%". The pace tick on each bar marks where usage would
+  be if the window were spent evenly; the gap between it and the bar end is the
+  headroom.
+
+  Colour says that and only that. Every green, amber and red on the page comes
+  from the pace verdict, so none of them can disagree with another. The charts
+  draw from a separate categorical palette, and its third slot - a green close
+  enough to the verdict's to be mistaken for it - is deliberately left unused.
+-->
+<style>
+:root{
+  --surface-1:#000000; --surface-2:#101010; --border:#262624;
+  --text-primary:#f5f5f3; --text-secondary:#c3c2b7; --text-muted:#8f8e86; --grid:#2a2a28;
+  --s1:#3987e5; --s2:#d95926;
+  --good:#199e70; --warn:#eab308; --crit:#e66767;
+  color-scheme:dark;
+}
+:root[data-theme="light"]{
+  --surface-1:#fcfcfb; --surface-2:#f2f1ed; --border:#e6e5e1;
+  --text-primary:#0b0b0b; --text-secondary:#52514e; --text-muted:#82817c; --grid:#e6e5e1;
+  --s1:#2a78d6; --s2:#eb6834;
+  --good:#1baf7a; --warn:#a16207; --crit:#b91c1c;
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--surface-1);color:var(--text-primary);
+  font:16px/1.45 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  padding:clamp(16px,2.2vw,40px)}
+header{display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap}
+h1{font-size:clamp(20px,1.9vw,30px);margin:0;font-weight:600;letter-spacing:-.01em}
+.meta{color:var(--text-muted);font-size:clamp(13px,1vw,16px);font-variant-numeric:tabular-nums}
+.heroes{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));
+  gap:clamp(14px,1.6vw,28px);margin:clamp(16px,2vw,32px) 0}
+.hero{background:var(--surface-2);border:1px solid var(--border);border-radius:14px;
+  padding:clamp(16px,1.6vw,28px)}
+.hero .top{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.hero .verdict{font-size:clamp(15px,1.5vw,26px);font-weight:650;letter-spacing:-.01em}
+.hero .at{color:var(--text-muted);font-size:clamp(12px,.95vw,16px);
+  font-variant-numeric:tabular-nums}
+.meter{position:relative}
+.meter .tick{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--text-primary);
+  border-radius:1px}
+.hero .label{color:var(--text-secondary);font-size:clamp(14px,1.1vw,19px);font-weight:600}
+.hero .who{color:var(--text-muted);font-weight:500;font-size:.82em;
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.hero .pct{font-size:clamp(56px,8.5vw,132px);line-height:1;font-weight:650;
+  letter-spacing:-.03em;font-variant-numeric:tabular-nums;margin:.06em 0 .12em}
+.hero .pct small{font-size:.42em;font-weight:500;color:var(--text-secondary);margin-left:.1em}
+.meter{height:clamp(8px,.7vw,14px);border-radius:99px;background:var(--grid)}
+.meter i{display:block;height:100%;border-radius:99px;transition:width .4s ease;max-width:100%}
+.hero .reset{color:var(--text-muted);font-size:clamp(13px,1vw,17px);margin-top:.55em;
+  font-variant-numeric:tabular-nums}
+.charts{display:grid;grid-template-columns:1fr 1fr;gap:clamp(14px,1.6vw,28px)}
+@media (max-width:860px){.charts{grid-template-columns:1fr}}
+.card{background:var(--surface-2);border:1px solid var(--border);border-radius:14px;
+  padding:clamp(14px,1.3vw,22px)}
+.card h2{font-size:clamp(13px,1vw,17px);margin:0 0 2px;font-weight:600}
+.card .sub{color:var(--text-muted);font-size:clamp(11.5px,.85vw,14px);margin:0 0 8px}
+svg{display:block;width:100%;height:auto;overflow:visible}
+.gl{stroke:var(--grid);stroke-width:1}
+.ax{fill:var(--text-muted);font-size:11px}
+.ln{fill:none;stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round}
+.err{background:var(--surface-2);border:1px solid var(--border);border-radius:14px;padding:22px;color:var(--crit)}
+</style>
+
+<header>
+  <h1>Claude usage</h1>
+  <div class="meta" id="updated">loading…</div>
+</header>
+
+<div id="body"></div>
+
+<script src="chart-lib.js"></script>
+<script>
+const REFRESH_MS = 60000;
+
+// ?theme=dark pins a kiosk display that would otherwise resolve to light.
+const theme = new URLSearchParams(location.search).get('theme');
+if (theme === 'dark' || theme === 'light') document.documentElement.dataset.theme = theme;
+
+const el = id => document.getElementById(id);
+// Two lines: the countdown, then the absolute time beneath it. Once the reset
+// has passed resetPhrase() already returns a timestamp, so the second line would
+// only repeat it - leave it empty.
+function resetPart(at, part) {
+  if (!at) return '';
+  if (part === 'in') return CCMON.resetPhrase(at);
+  return at > Math.floor(Date.now() / 1000) ? CCMON.resetAt(at) : '';
+}
+
+// The only colour scale on the page. Green/amber/red answer one question -
+// "am I on pace" - and never a second one, so a hue means the same thing
+// wherever it appears. Muted grey is "no pace reading": no data, or a window
+// too young to judge.
+const toneColor = t => t === 'crit' ? 'var(--crit)' : t === 'warn' ? 'var(--warn)'
+                     : t === 'good' ? 'var(--good)' : 'var(--text-muted)';
+
+// The headline: time left, and whether to speed up or slow down. The absolute
+// figure and bar stay - they are what you glance at - but the verdict is what
+// the project exists to answer.
+function hero(label, pct, resetsAt, windowSec, who) {
+  const p = CCMON.pace(pct, resetsAt, windowSec);
+  const shown = pct == null ? '--' : Math.round(pct);
+  // The number is a fact, so it wears text colour. The bar's colour is the
+  // verdict's, not the level's: level is already stated three ways - the
+  // numeral, the fill length, and where the fill ends relative to the tick -
+  // whereas pace was stated only in small text. A fixed threshold on level
+  // could only contradict the verdict anyway, since past the halfway mark of a
+  // window "51% used" is on budget, not a warning.
+  const color = toneColor(p.tone);
+  const numColor = pct == null ? 'var(--text-muted)' : 'var(--text-primary)';
+  return `<div class="hero">
+    <div class="label">${label}${who ? ` <span class="who">· ${who}</span>` : ''}</div>
+    <div class="top">
+      <div class="pct" style="color:${numColor}">${shown}<small>%</small></div>
+      <div class="verdict" style="color:${toneColor(p.tone)}">${p.verdict}</div>
+    </div>
+    <div class="meter">
+      <i style="width:${pct == null ? 0 : Math.min(100, pct)}%;background:${color}"></i>
+      ${p.paceNow > 0 && p.paceNow < 100
+        ? `<span class="tick" style="left:${p.paceNow}%"></span>` : ''}
+    </div>
+    <div class="reset" data-resets="${resetsAt || ''}" data-part="in">${resetPart(resetsAt, 'in') || '&nbsp;'}</div>
+    <div class="at" data-resets="${resetsAt || ''}" data-part="at">${resetPart(resetsAt, 'at') || '&nbsp;'}</div>
+  </div>`;
+}
+
+// How many machines put a sample inside a window.
+//
+// This counts pollers that were running, which is not the same as machines that
+// used Claude - and the difference is not recoverable from this data. The quota
+// is account-wide, so every machine records the same five_hour and seven_day
+// figures whether it was being typed at or merely switched on; nothing in a
+// sample says who spent the tokens. The count is therefore "machines that put a
+// sample in", which is the strongest claim the numbers support - the label says
+// only "machines" and deliberately does not say "used Claude".
+function reporting(rowsPerSource, from, to) {
+  return rowsPerSource.filter(rows => rows.some(d => d.t >= from && d.t <= to)).length;
+}
+
+// A window runs from its own reset backwards, not from now backwards: the
+// quota's clock is what the count should agree with. Without a reset time to
+// anchor to, the trailing window is the honest approximation.
+function windowStart(resetsAt, windowSec, now) {
+  return resetsAt ? resetsAt - windowSec : now - windowSec;
+}
+
+async function load() {
+  const bust = '?v=' + Date.now();   // Pages' CDN caches for ~10 minutes
+  let manifest;
+  try {
+    manifest = await (await fetch('data/index.json' + bust, { cache: 'no-store' })).json();
+  } catch (e) {
+    el('body').innerHTML = `<div class="err">Cannot read <code>data/index.json</code>.
+      If this page is open as a <code>file://</code> URL, fetch is blocked - serve it with
+      <code>ccmon serve</code> instead.</div>`;
+    return;
+  }
+
+  const sources = manifest.sources || manifest.hosts || [];
+  const rowsPerSource = await Promise.all(sources.map(async h => {
+    try {
+      const text = await (await fetch(h.file + bust, { cache: 'no-store' })).text();
+      return text.trim().split('\n').filter(Boolean).map(JSON.parse);
+    } catch { return []; }
+  }));
+  const rows = rowsPerSource.flat()
+    .filter(d => d && d.t != null)
+    .sort((a, b) => a.t - b.t)
+    .filter((d, i, a) => i === 0 || d.t !== a[i - 1].t);
+
+  if (!rows.length) {
+    el('body').innerHTML = `<div class="err">No samples recorded yet.</div>`;
+    return;
+  }
+
+  // Newest reading wins for the headline figures: every machine reports the
+  // same account-wide quota, so whichever synced last is the freshest truth.
+  const latest = sources.map(h => h.latest).filter(Boolean)
+    .sort((a, b) => (b.t || 0) - (a.t || 0))[0] || {};
+  const scopeKey = CCMON.scopeKey(rows);
+  const scopedNow = scopeKey ? (latest.scoped || {})[scopeKey] : null;
+
+  const now = Math.floor(Date.now() / 1000);
+  const total = sources.length;
+  const count = (resetsAt, windowSec) => {
+    const n = reporting(rowsPerSource, windowStart(resetsAt, windowSec, now), now);
+    return total > 1 ? `${n} of ${total} machines` : `${n} machine`;
+  };
+
+  el('body').innerHTML = `
+    <div class="heroes">
+      ${hero('5-hour session', latest.five_hour, latest.five_hour_resets_at, CCMON.WINDOW_5H,
+             count(latest.five_hour_resets_at, CCMON.WINDOW_5H))}
+      ${hero('7-day, all models', latest.seven_day, latest.seven_day_resets_at, CCMON.WINDOW_7D,
+             count(latest.seven_day_resets_at, CCMON.WINDOW_7D))}
+      ${scopeKey ? hero('7-day, ' + scopeKey, scopedNow, latest.seven_day_resets_at, CCMON.WINDOW_7D,
+             count(latest.seven_day_resets_at, CCMON.WINDOW_7D)) : ''}
+    </div>
+    <div class="charts">
+      <div class="card"><h2>7-day window</h2><p class="sub">Weekly quota</p><div id="c1"></div></div>
+      <div class="card"><h2>5-hour window</h2><p class="sub">Session quota</p><div id="c2"></div></div>
+    </div>
+`;
+
+  const opts = { W: 640, H: 240, ml: 30, mr: 92, mt: 10, mb: 24 };
+  CCMON.draw(el('c1'), null, [
+    { label: 'All models', color: 'var(--s1)', pts: rows.map(d => ({ t: d.t, v: d.seven_day ?? null })) },
+    ...(scopeKey ? [{ label: scopeKey, color: 'var(--s2)',
+        pts: rows.map(d => ({ t: d.t, v: (d.scoped || {})[scopeKey] ?? null })) }] : [])
+  ], rows, opts);
+  // One series, named by the card heading and by its own end label, so the hue
+  // carries no identity here: it takes slot 1, as the first line of any chart
+  // does. Giving it a hue of its own is what put a green line on the page.
+  CCMON.draw(el('c2'), null, [
+    { label: 'Session', color: 'var(--s1)', pts: rows.map(d => ({ t: d.t, v: d.five_hour ?? null })) }
+  ], rows, opts);
+
+  // Freshness is the only thing the old per-machine strip actually told you.
+  const age = Math.floor(Date.now() / 1000) - (manifest.generated || 0);
+  const ago = age < 90 ? age + 's' : age < 5400 ? Math.round(age / 60) + 'm' : Math.round(age / 3600) + 'h';
+  el('updated').textContent = `${rows.length} samples · updated ${ago} ago`;
+}
+
+load();
+setInterval(load, REFRESH_MS);
+
+// The data only changes every 15 minutes, but the countdown changes every
+// second. resetPhrase() already computes client-side from an absolute
+// timestamp, so the only thing missing was redrawing it: on the minute-long
+// render cycle the last minute of a window froze and then jumped. Tick just
+// these nodes - the pace verdict moves far too slowly to be worth recomputing.
+setInterval(() => {
+  for (const el of document.querySelectorAll('[data-resets][data-part]')) {
+    const at = Number(el.dataset.resets);
+    if (at) el.textContent = resetPart(at, el.dataset.part) || '\u00a0';
+  }
+}, 1000);
+</script>
