@@ -13,19 +13,25 @@ MODE=doctor
 ASSUME_YES=0
 
 # common and platform first: platform.sh sets PLATFORM, which decides which
-# half of the scheduler pair the rest of the stages will be talking to.
+# half of the scheduler pair - and which half of the widget pair - the rest of
+# the stages will be talking to.
+#
+# Only one of each pair is sourced. The widget libs define the same function
+# names (widget_autostart, widget_process, start_widget, ...), so loading both
+# would leave whichever came last in charge on every platform: on WSL that was
+# the macOS one, reaching for `defaults` and plutil that do not exist here.
 for lib in common platform; do
   # shellcheck source=/dev/null
   . "$CCMON_ROOT/lib/$lib.sh"
 done
 
 case "$PLATFORM" in
-  macos)     . "$CCMON_ROOT/lib/launchd.sh" ;;
-  wsl|linux) . "$CCMON_ROOT/lib/systemd.sh" ;;
+  macos)     . "$CCMON_ROOT/lib/launchd.sh"; . "$CCMON_ROOT/lib/macos.sh" ;;
+  wsl|linux) . "$CCMON_ROOT/lib/systemd.sh"; . "$CCMON_ROOT/lib/windows.sh" ;;
   *) printf 'ccmon does not know how to run on %s.\n' "$(uname -s)" >&2; exit 1 ;;
 esac
 
-for lib in detect install windows macos history pages; do
+for lib in detect install history pages; do
   # shellcheck source=/dev/null
   . "$CCMON_ROOT/lib/$lib.sh"
 done

@@ -1,6 +1,7 @@
 # shellcheck shell=bash
 # Stage 6 on macOS: the desktop widget. lib/windows.sh is the same stage on WSL,
-# and ./ccmon picks between them - neither lib knows about the other.
+# and ./ccmon sources one or the other, never both - they share function names,
+# so the second one sourced would silently replace the first.
 #
 # The widget is a compiled binary in an .app bundle. The bundle is not strictly
 # needed to make a status item work, but it is what makes it stable: LSUIElement
