@@ -17,12 +17,15 @@
     comparison that makes ./ccmon idempotent, so the path is handed to bash
     instead, which launchd does give a HOME. One string then carries both the
     program and its log, which is why there is no StandardOutPath below.
+
+    The Bedrock quota rides on the same job and throttles itself to every 15
+    minutes to hourly; a machine without it skips it.
   -->
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
     <string>-c</string>
-    <string>exec "$HOME/.claude/ccmon/usage-poll.sh" &gt;&gt;"$HOME/.claude/ccmon/poll.log" 2&gt;&amp;1</string>
+    <string>{ "$HOME/.claude/ccmon/usage-poll.sh"; b="$HOME/.claude/ccmon/bedrock-poll.sh"; [ ! -x "$b" ] || "$b"; } &gt;&gt;"$HOME/.claude/ccmon/poll.log" 2&gt;&amp;1</string>
   </array>
 
   <!--

@@ -25,10 +25,12 @@ of the fill is your headroom.
 ```mermaid
 flowchart LR
   API["Anthropic usage API"]
+  GW["Bedrock gateway<br/><i>optional</i>"]
 
   subgraph machine["each machine (WSL or macOS)"]
     POLL["poller<br/><i>every 5 min</i>"]
     SNAP[("usage-snapshot.json<br/><i>this machine's last reading</i>")]
+    BSNAP[("bedrock-snapshot.json<br/><i>live only, never shared</i>")]
     HIST[("history clone<br/><i>every machine's samples</i>")]
     SYNC["history-sync<br/><i>every 15 min</i>"]
   end
@@ -46,6 +48,9 @@ flowchart LR
   POLL -->|write| SNAP
   POLL -->|"append own file"| HIST
   SNAP -->|read| WIDGET
+  GW -->|"every 15 min to hourly"| POLL
+  POLL -->|write| BSNAP
+  BSNAP -->|read| WIDGET
   HIST --> SYNC
   SYNC -->|"push own file"| REPO
   REPO -->|"fetch every machine"| SYNC
@@ -78,6 +83,13 @@ merged history. That is usually invisible, because the quota is account-wide and
 every machine reports the same numbers — but if *this* machine's poller is backed
 off or its token has expired, the widget shows stale while another machine may
 have pushed fresher figures minutes ago.
+
+**So is the Bedrock quota.** On a machine that also uses Claude Code through
+Amazon Bedrock, behind a gateway that enforces a monthly budget per user, the
+poll job reads that budget every 15 minutes to hourly and the widget shows it
+as a second panel. That number is never appended to the history and never pushed: it is
+one person's, not the account's, and it is only ever shown on that person's
+desktop.
 
 The status line is fed by Claude Code itself rather than by ccmon, so it keeps
 working even when the poller is backed off or offline.
@@ -125,13 +137,33 @@ budget however much of the quota is already spent:
 | | |
 |---|---|
 | left-click | toggles between the desktop and the front, and stays there |
-| right-click | move widget · bring to front / send to desktop · hide / show · open wallboard · refresh now · update · quit |
+| right-click | move widget · bring to front / send to desktop · hide / show · hide / show Bedrock panel · profile · open wallboard · open Bedrock usage · refresh now · update · quit |
 
-The first two menu entries are toggles that relabel themselves, so the menu
-always states what the click will do rather than what the state currently is.
+The toggles relabel themselves, so the menu always states what the click will
+do rather than what the state currently is.
 
 "Refresh now" runs the poller rather than waiting for the next tick - inside
-WSL on Windows, directly on macOS.
+WSL on Windows, directly on macOS - and fetches the Bedrock quota as well,
+which otherwise waits up to an hour.
+
+**The Bedrock panel** sits directly below the main one, once `./ccmon` has been
+told where the gateway is. The setup proposes both the gateway's address and
+yours from the files its credential provider installed, and asks you to
+confirm them; neither is in this repository. The panel shows how much of this
+month's budget is used, with what is left in dollars beneath it and the same
+bar, pace tick and verdict as the subscription windows. The gateway's "tokens"
+are weighted by price, a million to the dollar, so a raw count left would mean
+little. A second row appears for the shared pool you draw from, but only once
+that pool is fuller than your own budget: spending it blocks everybody in it,
+and until then it cannot be what stops you. The panel grows and shrinks with
+it. "Open Bedrock usage" opens the gateway's dashboard on this month, filtered
+to you.
+
+**Profile** lists the [`claude-config`](https://gist.github.com/culmat/576ca386a0fce1fb51df3458e59f0684)
+profiles in `~/.claude/profiles` and switches between them. A switch applies
+to Claude Code sessions started afterwards, not to the ones already running.
+The status dot follows the active profile: on a Bedrock profile it speaks for
+the Bedrock panel, otherwise for the subscription.
 
 Either way it is a small compiled executable, built on the fly by `./ccmon`
 with a compiler the operating system already has, so there is nothing to

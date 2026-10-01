@@ -1,12 +1,12 @@
 # shellcheck shell=bash
-# Stage 9: publish the wallboard through GitHub Pages.
+# Stage 10: publish the wallboard through GitHub Pages.
 #
 # A public repo gets a public site. A private repo on Enterprise Cloud gets a
 # private one: viewing it needs a signed-in GitHub session, which is fine at a
 # desk and awkward for an unattended screen - that is what `ccmon serve` is for.
 
 stage_pages() {
-  stage 9 "GitHub Pages"
+  stage 10 "GitHub Pages"
 
   local slug
   slug=$(repo_slug)

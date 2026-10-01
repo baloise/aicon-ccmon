@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Stage 6 on WSL: the Windows desktop widget. Stage 2's WSL half lives here too,
+# Stage 7 on WSL: the Windows desktop widget. Stage 2's WSL half lives here too,
 # because everything it discovers - the Windows profile, the UNC path, whether
 # interop works at all - exists only to serve this stage.
 #
@@ -51,7 +51,7 @@ CSC_CANDIDATES=(
 )
 
 stage_widget() {
-  stage 6 "Desktop widget"
+  stage 7 "Desktop widget"
 
   if [ "${WIN_INTEROP:-0}" != 1 ]; then skip "no Windows to put a widget on"; return 0; fi
   if [ -z "${WIN_PROFILE:-}" ]; then skip "Windows profile not resolved"; return 0; fi
@@ -77,6 +77,13 @@ stage_widget() {
   WIDGET_URL=$(wallboard_url)
   WIDGET_EXE="$win_dir_win\\ccmon-widget.exe"
   WIDGET_ARGS="--snapshot \"$UNC_PATH\\usage-snapshot.json\" --wallboard \"$WIDGET_URL\" --distro \"${WSL_DISTRO_NAME:-}\" --repo \"$CCMON_ROOT\""
+  # The Bedrock panel appears only once its snapshot exists, and the Profile
+  # menu only with claude-config installed - so both paths can always be
+  # passed, and a machine that later gains either needs no reinstall for it.
+  WIDGET_ARGS="$WIDGET_ARGS --bedrock \"$UNC_PATH\\bedrock-snapshot.json\" --profiles \"$UNC_PATH\\profiles\""
+  local profile_cmd
+  profile_cmd=$(command -v claude-config 2>/dev/null || true)
+  [ -n "$profile_cmd" ] && WIDGET_ARGS="$WIDGET_ARGS --profile-cmd \"$profile_cmd\""
 
   local csc=""
   for c in "${CSC_CANDIDATES[@]}"; do [ -x "$c" ] && { csc="$c"; break; }; done

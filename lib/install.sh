@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Stages 5 and 7: poller + scheduled job, and the Claude Code status line.
+# Stages 5 and 8: poller + scheduled job, and the Claude Code status line.
 
 stage_poller() {
   stage 5 "Poller and $(sched_noun)"
@@ -72,7 +72,7 @@ poller_proof() {
 }
 
 stage_statusline() {
-  stage 7 "Claude Code status line"
+  stage 8 "Claude Code status line"
   install_file "$CCMON_ROOT/bin/statusline.sh" "$CCMON_DIR/statusline.sh" 755 "status line script"
 
   # Migrate the pre-repo status line, if present.

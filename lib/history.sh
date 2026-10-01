@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Stage 8: git-backed usage history.
+# Stage 9: git-backed usage history.
 #
 # Samples are appended to a clone of this repo's orphan `data` branch, pushed
 # hourly. A dedicated clone under ~/.claude/ccmon/ rather than your working
@@ -8,7 +8,7 @@
 HISTORY_DIR="$CCMON_DIR/history"
 
 stage_history() {
-  stage 8 "Usage history"
+  stage 9 "Usage history"
 
   local remote
   remote=$(git -C "$CCMON_ROOT" remote get-url origin 2>/dev/null)

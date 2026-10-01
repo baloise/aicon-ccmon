@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Stage 6 on macOS: the desktop widget. lib/windows.sh is the same stage on WSL,
+# Stage 7 on macOS: the desktop widget. lib/windows.sh is the same stage on WSL,
 # and ./ccmon sources one or the other, never both - they share function names,
 # so the second one sourced would silently replace the first.
 #
@@ -21,7 +21,7 @@ WIDGET_UPDATE="$CCMON_DIR/ccmon-update.command"
 xml_escape() { printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g'; }
 
 stage_macos_widget() {
-  stage 6 "Desktop widget"
+  stage 7 "Desktop widget"
 
   if ! command -v swiftc >/dev/null 2>&1; then
     fail "no swiftc - cannot build the widget"
@@ -124,6 +124,13 @@ widget_autostart() {
   # Straight to a file rather than into a variable: it lets plutil check the
   # result before it is installed, and bash 3.2 - which is what /bin/bash is on
   # every Mac - mis-parses a heredoc inside a command substitution.
+  # The Bedrock panel appears only once its snapshot exists, and the Profile
+  # menu only with claude-config installed - so both paths can always be
+  # passed, and a Mac that later gains either needs no reinstall for it.
+  local profile_cmd profile_xml=""
+  profile_cmd=$(command -v claude-config 2>/dev/null || true)
+  [ -n "$profile_cmd" ] && profile_xml="
+    <string>--profile-cmd</string> <string>$(xml_escape "$profile_cmd")</string>"
   cat > "$tmp" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -140,6 +147,8 @@ widget_autostart() {
     <string>--poller</string>    <string>$(xml_escape "$CCMON_DIR/usage-poll.sh")</string>
     <string>--update</string>    <string>$(xml_escape "$WIDGET_UPDATE")</string>
     <string>--refresh</string>   <string>30</string>
+    <string>--bedrock</string>   <string>$(xml_escape "$CLAUDE_DIR/bedrock-snapshot.json")</string>
+    <string>--profiles</string>  <string>$(xml_escape "$CLAUDE_DIR/profiles")</string>$profile_xml
   </array>
   <key>RunAtLoad</key>
   <true/>

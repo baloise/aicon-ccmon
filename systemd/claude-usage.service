@@ -5,3 +5,7 @@ After=network-online.target
 [Service]
 Type=oneshot
 ExecStart=%h/.claude/ccmon/usage-poll.sh
+# The Bedrock quota rides on the same timer and throttles itself to
+# every 15 minutes to hourly.
+# "-": a machine without it is not a failed poll.
+ExecStart=-%h/.claude/ccmon/bedrock-poll.sh

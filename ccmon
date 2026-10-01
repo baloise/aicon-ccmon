@@ -31,7 +31,7 @@ case "$PLATFORM" in
   *) printf 'ccmon does not know how to run on %s.\n' "$(uname -s)" >&2; exit 1 ;;
 esac
 
-for lib in detect install history pages; do
+for lib in detect install bedrock history pages; do
   # shellcheck source=/dev/null
   . "$CCMON_ROOT/lib/$lib.sh"
 done
@@ -62,7 +62,8 @@ run_stages() {
   stage_network
   stage_claude || return 1
   stage_poller
-  # Stage 6 is the same slot on both platforms and a different lib underneath.
+  stage_bedrock
+  # Stage 7 is the same slot on both platforms and a different lib underneath.
   # Neither lib knows about the other, so the choice is made here.
   case "$PLATFORM" in
     macos) stage_macos_widget ;;
@@ -153,8 +154,12 @@ cmd_uninstall() {
   sched_remove sync
   [ "$PLATFORM" = macos ] && widget_remove
   rm -f "$CCMON_DIR/usage-poll.sh" "$CCMON_DIR/statusline.sh" "$CCMON_DIR/creds.sh" \
-        "$CCMON_DIR/history-sync.sh" "$CCMON_DIR/chart.sh"
+        "$CCMON_DIR/history-sync.sh" "$CCMON_DIR/chart.sh" "$CCMON_DIR/bedrock-poll.sh"
   fixed "installed scripts removed"
+  if [ -f "$BEDROCK_CONF" ]; then
+    need "the Bedrock settings are still in $BEDROCK_CONF"
+    confirm && { rm -f "$BEDROCK_CONF" "$BEDROCK_SNAPSHOT"; fixed "removed them"; }
+  fi
   info "kept $SNAPSHOT and $CCMON_DIR/history - the clone may still hold samples"
   info "that were never pushed. Delete them by hand if you want them gone."
   summary

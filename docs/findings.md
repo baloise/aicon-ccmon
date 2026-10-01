@@ -71,6 +71,101 @@ merges them again and takes the newest reading for its headline figures.
 A pleasant side effect: whichever machine happens to be awake extends the
 timeline, so the history has fewer gaps than any single laptop would produce.
 
+## The Bedrock gateway's quota
+
+Some organisations put Claude Code on Amazon Bedrock behind a gateway of their
+own - the shape AWS's *Claude Code with Bedrock* guidance deploys - and enforce
+a monthly budget per user there, counted in price-weighted tokens. Its dashboard is the only place that
+quota is visible, and it has a JSON API behind it with no authentication:
+
+| Endpoint | What |
+|---|---|
+| `GET /health` | `OK`. Cheap; `./ccmon` uses it to find a route that works |
+| `GET /api/usage` | every user, with limits and per-month totals; a few MB |
+| `GET /api/usage/<email>` | one user's totals, live from the database - but no limit fields, case-sensitive, and anywhere from a fifth of a second to over a minute to answer |
+
+So the list is the only endpoint that carries the limit. It is served from a
+cache the gateway refreshes every quarter of an hour, and the fields ccmon reads
+from it are:
+
+```json
+{
+  "current_month": "2026-10",
+  "default_limit": 200000000,
+  "last_refresh": "2026-10-01T13:57:20+00:00",
+  "pools": { "org": { "2026-10": { "monthly_token_limit": 0, "total_tokens": 0, "blocked": false } },
+             "country": { "<cc>": { "2026-10": { } } },
+             "market_unit": { "<mu>": { "2026-10": { } } } },
+  "users": [ { "email": "First.Last@example.com", "effective_limit": 200000000,
+               "unlimited": false, "blocked": false, "block_reasons": [],
+               "country": "<cc>", "market_unit": "<mu>",
+               "months": { "2026-10": { "total_tokens": 9871411 } } } ]
+}
+```
+
+Used is `months[current_month].total_tokens`, the limit is `effective_limit`,
+and what is left is the difference - which is the dashboard's own arithmetic.
+
+**The tokens are dollars.** The gateway weights each model's input and output
+tokens by price, so that a million weighted tokens is one US dollar - its
+dashboard converts with exactly that factor. The 200 M default above is a
+$200 budget, and "182 M left" would mislead anyone who counts tokens the way
+Claude Code reports them. ccmon shows the percentage used, as the dashboard
+does, and what is left in dollars.
+
+**Pools** are the same kind of budget for a group: the whole organisation, a
+country, a market unit, each with its own monthly limit, or 0 for none. Once
+one is spent, everybody in it is blocked - `block_reasons` then names the pool
+rather than `user`. The poller keeps the fullest pool that applies to you and
+marks it `binding` when it is fuller than your own budget or already blocked.
+Only then does the widget give it a row: a pool at 3% while you are at 9%
+cannot be what stops you.
+Someone who has not used Bedrock yet this month is simply **not in the list**,
+which means nothing used against `default_limit` rather than an error. Months
+are calendar months in UTC.
+
+The poller asks for `?email=<address>` and filters the answer itself. A gateway
+that ignores the parameter still sends the whole list, which the filter copes
+with; one that honours it sends one row. Either way the response is held in
+memory and only the one user's row is kept - the list is everybody's usage and
+has no business on anyone's disk.
+
+**Every 15 minutes when the gateway answers for you alone, hourly when it sends
+everyone.** The snapshot records which it was as `filtered`. Fifteen minutes is
+the gateway's own refresh, so polling faster shows nothing new; the full list
+is a few megabytes, worth fetching at most hourly. Once a day was tried first,
+and by the afternoon the panel was visibly behind the dashboard. A new month, a
+stale previous fetch and "Refresh now" all override the throttle, and
+`CCMON_BEDROCK_MAX_AGE` (seconds) overrides the cadence.
+
+**The dashboard is slow, and it is not this.** Each refresh rescans the
+gateway's tables in full - they are keyed by user, with nothing to find "this
+month" by - and the dashboard's own pages re-fetch the full list every two
+minutes per open tab, most of it detail they never read. The per-user page is
+a live query on every load. Against that, one request an hour, or one small one
+a quarter-hour, is noise; and the snapshot carries the dashboard's address as
+`dashboard`, so the widget can link to the page itself - this month, filtered
+to you - rather than reproduce it.
+
+**Where the gateway is** is not in this repository and cannot be derived from
+anything public. The credential provider's install directory knows it, though:
+its update script links to the dashboard's downloads page, and where there is
+no update script the connectivity check names the runtime endpoint, which sits
+on the same domain. `./ccmon` proposes whichever it finds and asks you to
+confirm it.
+
+**Which address the gateway knows you by** is the email claim of the identity
+token the provider signs you in with - not necessarily your git address, nor
+the one on your mailbox. The provider keeps that claim beside the token in
+`~/.claude-code-session/<AWS_PROFILE>-monitoring.json` (in the Windows profile
+when the provider is a Windows executable), and `./ccmon` reads the `email`
+field from it and nothing else.
+
+**Reaching it** may need going around the proxy: an internal gateway is
+typically not reachable through the proxy that reaches the internet. `./ccmon`
+tries the plain route, then `--noproxy`, then `--noproxy` over IPv4, and keeps
+whichever answered first.
+
 ## The status line payload
 
 Claude Code documents its own status line stdin schema inside the binary. The
@@ -97,6 +192,9 @@ from the API.
 | `~/.claude/ccmon/creds.sh` | where the credentials live, shared with `./ccmon` |
 | `~/.claude/ccmon/statusline.sh` | the status line script |
 | `~/.claude/usage-snapshot.json` | the current reading, and what the widget displays |
+| `~/.claude/ccmon/bedrock-poll.sh` | the Bedrock quota poller, run by the same job |
+| `~/.claude/ccmon/bedrock.conf` | the gateway URL, the address it knows you by, curl options; mode 600 |
+| `~/.claude/bedrock-snapshot.json` | this month's Bedrock quota, live only |
 | `~/.claude/ccmon/{poll,sync}.log` | macOS only: what the agents printed, empty when well |
 | `~/.claude/ccmon/CcmonWidget.app` | macOS only: the widget, built in place |
 | `~/Library/LaunchAgents/com.ccmon.*` | macOS only: the poller, the sync job, the widget |
