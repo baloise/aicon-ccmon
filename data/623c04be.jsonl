@@ -2666,3 +2666,6 @@
 {"t":1790958799,"five_hour":null,"seven_day":null,"scoped":{},"ok":false}
 {"t":1790959099,"five_hour":null,"seven_day":null,"scoped":{},"ok":false}
 {"t":1790959399,"five_hour":0.0,"seven_day":49.0,"scoped":{"Fable":59},"ok":true}
+{"t":1790959699,"five_hour":2.0,"seven_day":49.0,"scoped":{"Fable":59},"ok":true}
+{"t":1790960001,"five_hour":3.0,"seven_day":49.0,"scoped":{"Fable":59},"ok":true}
+{"t":1790960301,"five_hour":3.0,"seven_day":49.0,"scoped":{"Fable":59},"ok":true}
