@@ -124,6 +124,7 @@ struct Reading {
     var alert = ""
     var summary = ""
     var link = ""                       // a page with the detail behind it, if any
+    var via = ""                        // the machine whose reading this is, when not ours
     var fetchedAtMs: Double = 0
 
     private static func load(_ path: String) -> (Reading, [String: Any])? {
@@ -134,6 +135,7 @@ struct Reading {
         r.stale = (d["stale"] as? Bool) ?? false
         r.reason = (d["reason"] as? String) ?? ""
         r.fetchedAtMs = num(d["fetchedAtMs"]) ?? num(d["checkedAtMs"]) ?? 0
+        r.via = (d["via"] as? String) ?? ""
         return (r, d)
     }
 
@@ -671,7 +673,8 @@ final class PanelView: NSView {
         if !everRead            { foot = "waiting for the poller..." }
         else if reading == nil  { foot = "snapshot unreadable" }
         else if reading!.stale  { foot = "stale - " + reading!.reason }
-        else                    { foot = "updated " + age(reading!.fetchedAtMs) + " ago" }
+        else                    { foot = "updated " + age(reading!.fetchedAtMs) + " ago"
+                                         + (reading!.via.isEmpty ? "" : " by another machine") }
         let h = bounds.height
         draw(foot, fSmall, pal.muted, PAD, h - PAD - 6)
         if let a = reading?.alert, !a.isEmpty {

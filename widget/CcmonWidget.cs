@@ -88,6 +88,7 @@ class Reading {
     public bool Stale = true;
     public string Reason = "", Alert = "", Summary = "";
     public string Link = "";            // a page with the detail behind it, if any
+    public string Via = "";             // the machine whose reading this is, when not ours
     public double FetchedAtMs;
 
     public const int WINDOW_5H = 5 * 3600, WINDOW_7D = 7 * 86400;
@@ -97,6 +98,7 @@ class Reading {
         r.Stale = d.ContainsKey("stale") && Convert.ToBoolean(d["stale"]);
         r.Reason = d.ContainsKey("reason") && d["reason"] != null ? d["reason"].ToString() : "";
         r.FetchedAtMs = Num(d, "fetchedAtMs") ?? Num(d, "checkedAtMs") ?? 0;
+        r.Via = d.ContainsKey("via") && d["via"] != null ? d["via"].ToString() : "";
         return d;
     }
 
@@ -600,7 +602,8 @@ static class Program {
         if (!p.EverRead)        foot = "waiting for WSL...";
         else if (data == null)  foot = "snapshot unreadable";
         else if (data.Stale)    foot = "stale - " + data.Reason;
-        else                    foot = "updated " + Age(data.FetchedAtMs) + " ago";
+        else                    foot = "updated " + Age(data.FetchedAtMs) + " ago"
+                                     + (data.Via.Length > 0 ? " by another machine" : "");
         g.DrawString(foot, fSmall, bMuted, PAD, h - PAD - 6);
         if (data != null && data.Alert.Length > 0) {
             SizeF a = g.MeasureString(data.Alert, fSmall);

@@ -31,7 +31,7 @@ stage_poller() {
 poller_proof() {
   sched_active poll || return 0
 
-  local before age okflag reason i=0
+  local before age okflag reason via i=0
   before=$(file_mtime "$SNAPSHOT")
   age=$(( $(date +%s) - before ))
   if [ -f "$SNAPSHOT" ] && [ "$age" -lt 600 ]; then
@@ -54,8 +54,14 @@ poller_proof() {
   fi
 
   okflag=$(jq -r '.ok // false'  "$SNAPSHOT" 2>/dev/null)
-  reason=$(jq -r '.reason // ""' "$SNAPSHOT" 2>/dev/null)
-  [ "$okflag" = true ] && { fixed "the $(sched_noun) fetched usage"; return 0; }
+  reason=$(jq -r '.reason // .ownReason // ""' "$SNAPSHOT" 2>/dev/null)
+  via=$(jq -r '.via // ""' "$SNAPSHOT" 2>/dev/null)
+  if [ "$okflag" = true ] && [ -z "$via" ]; then
+    fixed "the $(sched_noun) fetched usage"; return 0
+  fi
+  # Borrowed from another machine: the widget has numbers, but this machine's
+  # own read still failed, and the reason below is what to do about it.
+  [ -n "$via" ] && info "showing machine $via's reading until this one can read its own"
 
   case "$reason" in
     keychain-timeout)

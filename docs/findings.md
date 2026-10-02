@@ -60,6 +60,17 @@ last known percentages. Using Claude Code renews the token; the poller recovers
 on its own. In practice this means continuous coverage during a working day and
 a gap overnight.
 
+The gap is longer on a machine that also runs Claude Code through Bedrock: a
+profile switch moves every new session off the subscription, and with it the
+only thing that renews the token. `claude auth status` does not renew it
+either - it reports the login without touching the credentials. So while
+another machine is still reading, the poller borrows that machine's latest
+reading from the history clone (`via` in the snapshot, "by another machine" in
+the widget). It takes nothing over 30 minutes old, and nothing from another
+account. `latest.json` carries no account id, but the weekly window is anchored
+per account and repeats every 7 days, so a 7d reset that is a whole number of
+weeks from this machine's own last one is the same account. A machine with no reading of its own yet borrows nothing.
+
 ## Why the numbers are the same on every machine
 
 The quota is per account (`subscriptionType: "team"`), not per machine. Several

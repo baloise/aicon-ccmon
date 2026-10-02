@@ -78,11 +78,13 @@ samples — which is what `chart.sh`, `ccmon serve` and the wallboard read. One
 file per machine is what makes that safe: no two machines ever write the same
 file, so the pushes cannot conflict.
 
-**The widget is the exception.** It reads only `usage-snapshot.json`, never the
-merged history. That is usually invisible, because the quota is account-wide and
-every machine reports the same numbers — but if *this* machine's poller is backed
-off or its token has expired, the widget shows stale while another machine may
-have pushed fresher figures minutes ago.
+**The widget reads only `usage-snapshot.json`,** not the merged history. When
+*this* machine cannot read its own usage — typically because its token expired
+while Claude Code ran through Bedrock — the poller fills that snapshot with
+another machine's reading from the clone instead, and the widget footer says
+"by another machine". The quota is account-wide, so it is the same number. Only
+a reading under 30 minutes old counts, and only one from the same account,
+recognised by its weekly reset time; with neither, the widget shows stale.
 
 **So is the Bedrock quota.** On a machine that also uses Claude Code through
 Amazon Bedrock, behind a gateway that enforces a monthly budget per user, the

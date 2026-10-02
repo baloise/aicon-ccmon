@@ -46,7 +46,7 @@ write_snapshot_stale() { # $1 = reason
   local prev='{}'
   [ -f "$OUT" ] && prev=$(cat "$OUT" 2>/dev/null || echo '{}')
   echo "$prev" | jq --arg r "$1" --argjson t "$now_ms" \
-    '. + {ok:false, stale:true, reason:$r, checkedAtMs:$t}' > "$TMP" 2>/dev/null \
+    'del(.via, .ownReason) + {ok:false, stale:true, reason:$r, checkedAtMs:$t}' > "$TMP" 2>/dev/null \
     || printf '{"ok":false,"stale":true,"reason":"%s","checkedAtMs":%s}\n' "$1" "$now_ms" > "$TMP"
   mv -f "$TMP" "$OUT"
 }
@@ -117,6 +117,60 @@ append_history() {
     && mv -f "$HISTORY_DIR/data/$HOST.latest.json.tmp" "$HISTORY_DIR/data/$HOST.latest.json"
 }
 
+# ----------------------------------------------------------------- borrow ---
+# When this machine cannot read its own usage - most often because its token
+# expired while Claude Code was used through another provider - another
+# machine's reading is the next best thing. The quota is per account, so it is
+# the same number, and the history clone already holds every machine's latest
+# one: no network, no credentials.
+#
+# Only a reading under 30 minutes old (the sync runs every 15), and only from
+# the same account. latest.json carries no account id, but the weekly window
+# is anchored to the account and repeats every 7 days, so a 7d reset that is a
+# whole number of weeks from this machine's last one is the same account. With
+# no last reading of its own to compare against, a machine borrows nothing.
+#
+# Our own failure was recorded by then, so the borrowed numbers never enter
+# this machine's history, and another machine never borrows a borrowed one.
+borrow_reading() { # $1 = why our own read failed
+  local data="$HISTORY_DIR/data" f files=()
+  [ -d "$data" ] && [ -f "$OUT" ] || return 1
+  for f in "$data"/*.latest.json; do
+    [ -f "$f" ] && [ "$f" != "$data/$HOST.latest.json" ] && files+=("$f")
+  done
+  [ "${#files[@]}" -gt 0 ] || return 1
+
+  jq -n --slurpfile own "$OUT" --arg why "$1" --argjson now "$now_s" '
+    def epoch: if . == null then null
+               else (sub("\\.[0-9]+";"") | sub("\\+00:00$";"Z") | fromdateiso8601) end;
+    def iso: if . == null then null else todate end;
+    ($own[0].seven_day_resets_at | epoch) as $anchor
+    | select($anchor != null)
+    | [ inputs
+        | select(.ok == true and .t != null and ($now - .t) < 1800
+                 and .seven_day_resets_at != null)
+        | select((((.seven_day_resets_at - $anchor) % 604800) + 604800) % 604800
+                 | . < 3600 or . > 604800 - 3600) ]
+    | max_by(.t) // empty
+    | {
+        ok: true,
+        stale: false,
+        fetchedAtMs: (.t * 1000),
+        checkedAtMs: ($now * 1000),
+        via: .source,
+        ownReason: $why,
+        five_hour: .five_hour,
+        seven_day: .seven_day,
+        five_hour_resets_at: (.five_hour_resets_at | iso),
+        seven_day_resets_at: (.seven_day_resets_at | iso),
+        limits: [ (.scoped // {}) | to_entries[]
+                  | {kind: "weekly_scoped", group: null, percent: .value,
+                     severity: null, resets_at: null, scope: .key} ]
+      }' "${files[@]}" > "$TMP" 2>/dev/null || return 1
+  [ -s "$TMP" ] || return 1
+  mv -f "$TMP" "$OUT"
+}
+
 mkdir -p "$CCMON_DIR"
 HOST=$(machine_id)
 
@@ -143,6 +197,7 @@ if ! raw=$(fetch_usage); then
   esac
   write_snapshot_stale "${raw:-unknown}"
   append_history
+  borrow_reading "${raw:-unknown}"
   exit 0
 fi
 rm -f "$BACKOFF"

@@ -168,8 +168,12 @@ async function load() {
 
   // Newest reading wins for the headline figures: every machine reports the
   // same account-wide quota, so whichever synced last is the freshest truth.
-  const latest = sources.map(h => h.latest).filter(Boolean)
-    .sort((a, b) => (b.t || 0) - (a.t || 0))[0] || {};
+  // A failed reading is newest whenever its machine's token has expired, and
+  // repeats that machine's last numbers however old - so it only counts when
+  // no machine has a good one.
+  const byAge = sources.map(h => h.latest).filter(Boolean)
+    .sort((a, b) => (b.t || 0) - (a.t || 0));
+  const latest = byAge.find(l => l.ok !== false) || byAge[0] || {};
   const scopeKey = CCMON.scopeKey(rows);
   const scopedNow = scopeKey ? (latest.scoped || {})[scopeKey] : null;
 

@@ -93,7 +93,8 @@ cmd_status() {
         ( "  7d  \(.seven_day // "-")%" ),
         ( (.limits // [])[]
           | select(.kind == "weekly_scoped")
-          | "  7d  \(.percent)%  (\(.scope))" )
+          | "  7d  \(.percent)%  (\(.scope))" ),
+        ( if .via then "  read by machine \(.via) - this one: \(.ownReason // "unknown")" else empty end )
       else "  stale: \(.reason // "unknown")" end' "$SNAPSHOT"
     local age
     age=$(( $(date +%s) - $(jq -r '(.fetchedAtMs // .checkedAtMs // 0) / 1000 | floor' "$SNAPSHOT") ))
