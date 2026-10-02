@@ -227,7 +227,10 @@ class Pace {
         }
         if (u >= TARGET)      { p.Verdict = "over budget";  p.Tone = "crit"; return p; }
         if (p.Remaining <= 0) { p.Verdict = "window closed";                 return p; }
-        if (p.Elapsed < 0.05) { p.Verdict = "just reset";                    return p; }
+        // Too early to extrapolate - but only while usage is within an even
+        // share of that early stretch. A monthly window's first 5% is a day and
+        // a half, and 18% spent on day one is no time to say nothing.
+        if (p.Elapsed < 0.05 && u <= TARGET * 0.05) { p.Verdict = "just reset"; return p; }
 
         double rateNow = u / p.Elapsed;
         double rateNeeded = p.Headroom.Value / Math.Max(1e-6, 1 - p.Elapsed);
@@ -239,7 +242,8 @@ class Pace {
         else if (f > 1.15)  { p.Verdict = "faster " + f.ToString("0.0") + "x";    p.Tone = "good"; }
         else if (f >= 0.85) { p.Verdict = "on pace";                              p.Tone = "good"; }
         else if (f >= 0.5)  { p.Verdict = "ease off " + f.ToString("0.0") + "x";  p.Tone = "warn"; }
-        else                { p.Verdict = "slow down " + f.ToString("0.0") + "x"; p.Tone = "crit"; }
+        else if (f >= 0.1)  { p.Verdict = "slow down " + f.ToString("0.0") + "x"; p.Tone = "crit"; }
+        else                { p.Verdict = "slow down";                            p.Tone = "crit"; }
         return p;
     }
 

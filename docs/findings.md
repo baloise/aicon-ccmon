@@ -487,9 +487,12 @@ factor     = rateNeeded / rateNow       multiply your current rate by this
 
 `factor` explodes at both ends of a window - divide by a tiny `e` just after a
 reset, or a tiny `1 - e` just before one - so it is never shown raw. Below 5%
-elapsed it reads "just reset"; above 3x it reads "burn freely"; between those it
-is shown to one decimal. The concrete figure (`%/h` for the 5-hour window,
-`%/day` for the weekly one) is more actionable than the multiplier and does not
+elapsed it reads "just reset", as long as usage is still within an even share
+of that 5% (`u <= 95 * 0.05`); beyond that it is already overspending however
+young the window, and is judged like any other point. Above 3x it reads "burn
+freely" and below 0.1x a bare "slow down", since "0.0x" is what that early
+overspend would otherwise print; between those it is shown to one decimal. The
+concrete figure (`%/h` for the 5-hour window, `%/day` for the weekly one) is more actionable than the multiplier and does not
 blow up, so both are displayed.
 
 The maths lives in `pace()` in `wallboard/chart-lib.js` and is mirrored in

@@ -280,7 +280,10 @@ struct Pace {
         let headroom = TARGET - u
         if u >= TARGET    { p.verdict = "over budget";   p.tone = "crit"; return p }
         if remaining <= 0 { p.verdict = "window closed";                 return p }
-        if elapsed < 0.05 { p.verdict = "just reset";                    return p }
+        // Too early to extrapolate - but only while usage is within an even
+        // share of that early stretch. A monthly window's first 5% is a day and
+        // a half, and 18% spent on day one is no time to say nothing.
+        if elapsed < 0.05, u <= TARGET * 0.05 { p.verdict = "just reset"; return p }
 
         let rateNow = u / elapsed
         let rateNeeded = headroom / max(1e-6, 1 - elapsed)
@@ -291,7 +294,8 @@ struct Pace {
         else if f > 1.15  { p.verdict = String(format: "faster %.1fx", f);    p.tone = "good" }
         else if f >= 0.85 { p.verdict = "on pace";                            p.tone = "good" }
         else if f >= 0.5  { p.verdict = String(format: "ease off %.1fx", f);  p.tone = "warn" }
-        else              { p.verdict = String(format: "slow down %.1fx", f); p.tone = "crit" }
+        else if f >= 0.1  { p.verdict = String(format: "slow down %.1fx", f); p.tone = "crit" }
+        else              { p.verdict = "slow down";                          p.tone = "crit" }
         return p
     }
 
