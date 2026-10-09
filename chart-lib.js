@@ -7,11 +7,6 @@
  * The caller supplies colours via CSS custom properties, so the palette lives in
  * each page's stylesheet - it is validated for CVD separation and contrast in
  * both light and dark, so change it only with the validator to hand.
- *
- * Series hues are categorical slots 1-2. Slot 3 is a green a shade off the pace
- * verdict's, and stays unused rather than putting a green line on a page where
- * green already means "on pace"; a third series should take slot 5 (magenta,
- * #d55181 dark / #e87ba4 light) and skip slot 4, which is the warn amber.
  */
 const CCMON = (function () {
   // A laptop that was asleep leaves a hole. Drawing through it would invent
@@ -177,10 +172,7 @@ const CCMON = (function () {
 
     if (u >= TARGET)        { out.verdict = 'over budget'; out.tone = 'crit'; return out; }
     if (remaining <= 0)     { out.verdict = 'window closed'; return out; }
-    // Too early to extrapolate - but only while usage is within an even share
-    // of that early stretch. A monthly window's first 5% is a day and a half,
-    // and 18% spent on day one is no time to say nothing.
-    if (e < 0.05 && u <= TARGET * 0.05) { out.verdict = 'just reset'; return out; }
+    if (e < 0.05)           { out.verdict = 'just reset'; return out; }
 
     out.rateNow = u / e;
     out.rateNeeded = out.headroom / Math.max(1e-6, 1 - e);
@@ -191,8 +183,7 @@ const CCMON = (function () {
     else if (f > 1.15)          { out.verdict = 'faster ' + f.toFixed(1) + 'x'; out.tone = 'good'; }
     else if (f >= 0.85)         { out.verdict = 'on pace';                      out.tone = 'good'; }
     else if (f >= 0.5)          { out.verdict = 'ease off ' + f.toFixed(1) + 'x'; out.tone = 'warn'; }
-    else if (f >= 0.1)          { out.verdict = 'slow down ' + f.toFixed(1) + 'x'; out.tone = 'crit'; }
-    else                        { out.verdict = 'slow down';                   out.tone = 'crit'; }
+    else                        { out.verdict = 'slow down ' + f.toFixed(1) + 'x'; out.tone = 'crit'; }
     return out;
   }
 
