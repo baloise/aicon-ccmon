@@ -10,8 +10,8 @@
 #
 # Every fifteen minutes when the gateway answers for this user alone, hourly
 # when it sends everyone. Fifteen minutes is how often the gateway itself
-# recounts, so polling faster shows nothing new; but the full list is a few
-# megabytes, and that is worth fetching only every hour. Once a day was tried
+# recounts, so polling faster shows nothing new; but the full list is most of
+# a megabyte, and that is worth fetching only every hour. Once a day was tried
 # and was visibly behind the dashboard by lunchtime. --force (the widget's
 # "Refresh now"), a new month and a failed last attempt override the throttle.
 
@@ -69,11 +69,12 @@ write_snapshot_stale() { # $1 = reason
 # same - so there is nothing to detect and no second code path.
 #
 # The body is held in memory and never written out: it is every user's usage,
-# and only our own row is kept.
+# and only our own row is kept. --compressed because the gateway gzips, and
+# curl does not ask for it unless told: a sixth of the bytes either way.
 q=$(jq -rn --arg e "$EMAIL" '$e | @uri')
 # The +-form because bash 3.2, /bin/bash on every Mac, calls an empty array
 # unbound under set -u.
-body=$(curl -sS --max-time 90 ${CURL_OPTS[@]+"${CURL_OPTS[@]}"} -o - -w '\n%{http_code}' \
+body=$(curl -sS --compressed --max-time 90 ${CURL_OPTS[@]+"${CURL_OPTS[@]}"} -o - -w '\n%{http_code}' \
   -H "User-Agent: ccmon/1" "${URL%/}/api/usage?email=$q" 2>/dev/null)
 code="${body##*$'\n'}"
 if [ "$code" != "200" ]; then

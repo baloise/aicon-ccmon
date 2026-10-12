@@ -92,18 +92,20 @@ quota is visible, and it has a JSON API behind it with no authentication:
 | Endpoint | What |
 |---|---|
 | `GET /health` | `OK`. Cheap; `./ccmon` uses it to find a route that works |
-| `GET /api/usage` | every user, with limits and per-month totals; a few MB |
-| `GET /api/usage/<email>` | one user's totals, live from the database - but no limit fields, case-sensitive, and anywhere from a fifth of a second to over a minute to answer |
+| `GET /api/usage` | every user, with limits and per-month totals; about 800 KB, 120 KB gzipped |
+| `GET /api/usage/<email>` | one user's totals by month, day and model - but no limit fields, and case-sensitive |
 
-So the list is the only endpoint that carries the limit. It is served from a
-cache the gateway refreshes every quarter of an hour, and the fields ccmon reads
-from it are:
+So the list is the only endpoint that carries the limit. Both are served from a
+PostgreSQL mirror of the gateway's DynamoDB tables, which one job refills every
+quarter of an hour (the gateway's v2, from October 2026; v1 held the list in
+each pod's memory and answered the per-user page with a live DynamoDB query
+that could take over a minute). The fields ccmon reads from the list are:
 
 ```json
 {
   "current_month": "2026-10",
   "default_limit": 200000000,
-  "last_refresh": "2026-10-01T13:57:20+00:00",
+  "last_refresh": "2026-10-12T13:15:15.202912Z",
   "pools": { "org": { "2026-10": { "monthly_token_limit": 0, "total_tokens": 0, "blocked": false } },
              "country": { "<cc>": { "2026-10": { } } },
              "market_unit": { "<mu>": { "2026-10": { } } } },
@@ -144,19 +146,17 @@ has no business on anyone's disk.
 **Every 15 minutes when the gateway answers for you alone, hourly when it sends
 everyone.** The snapshot records which it was as `filtered`. Fifteen minutes is
 the gateway's own refresh, so polling faster shows nothing new; the full list
-is a few megabytes, worth fetching at most hourly. Once a day was tried first,
+is most of a megabyte, worth fetching at most hourly. Once a day was tried first,
 and by the afternoon the panel was visibly behind the dashboard. A new month, a
 stale previous fetch and "Refresh now" all override the throttle, and
 `CCMON_BEDROCK_MAX_AGE` (seconds) overrides the cadence.
 
-**The dashboard is slow, and it is not this.** Each refresh rescans the
-gateway's tables in full - they are keyed by user, with nothing to find "this
-month" by - and the dashboard's own pages re-fetch the full list every two
-minutes per open tab, most of it detail they never read. The per-user page is
-a live query on every load. Against that, one request an hour, or one small one
-a quarter-hour, is noise; and the snapshot carries the dashboard's address as
-`dashboard`, so the widget can link to the page itself - this month, filtered
-to you - rather than reproduce it.
+**The gateway's load is not this.** Each refresh rescans its DynamoDB tables
+in full - they are keyed by user, with nothing to find "this month" by - and
+the dashboard's own pages fetch the list for every open tab. Against that, one
+request an hour, or one small one a quarter-hour, is noise; and the snapshot
+carries the dashboard's address as `dashboard`, so the widget can link to the
+page itself - this month, filtered to you - rather than reproduce it.
 
 **Where the gateway is** is not in this repository and cannot be derived from
 anything public. The credential provider's install directory knows it, though:
