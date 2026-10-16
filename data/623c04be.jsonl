@@ -3826,3 +3826,6 @@
 {"t":1792189013,"five_hour":5.0,"seven_day":87.0,"scoped":{"Fable":48},"ok":true}
 {"t":1792189313,"five_hour":6.0,"seven_day":87.0,"scoped":{"Fable":49},"ok":true}
 {"t":1792189614,"five_hour":6.0,"seven_day":87.0,"scoped":{"Fable":49},"ok":true}
+{"t":1792189915,"five_hour":9.0,"seven_day":87.0,"scoped":{"Fable":50},"ok":true}
+{"t":1792190215,"five_hour":11.0,"seven_day":88.0,"scoped":{"Fable":50},"ok":true}
+{"t":1792190516,"five_hour":13.0,"seven_day":88.0,"scoped":{"Fable":51},"ok":true}
