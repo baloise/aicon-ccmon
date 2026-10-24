@@ -5008,3 +5008,6 @@
 {"t":1792845332,"five_hour":4.0,"seven_day":5.0,"scoped":{"Fable":1},"ok":true}
 {"t":1792845634,"five_hour":5.0,"seven_day":5.0,"scoped":{"Fable":1},"ok":true}
 {"t":1792845934,"five_hour":5.0,"seven_day":5.0,"scoped":{"Fable":1},"ok":true}
+{"t":1792846235,"five_hour":6.0,"seven_day":5.0,"scoped":{"Fable":1},"ok":true}
+{"t":1792846536,"five_hour":8.0,"seven_day":6.0,"scoped":{"Fable":1},"ok":true}
+{"t":1792846837,"five_hour":10.0,"seven_day":6.0,"scoped":{"Fable":1},"ok":true}
