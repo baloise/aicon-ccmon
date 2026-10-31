@@ -1,5 +1,5 @@
 {
-  "generated": 1793459499,
+  "generated": 1793464674,
   "sources": [
     {"source": "623c04be", "file": "data/623c04be.jsonl", "samples": 5687, "latest": {"source":"623c04be","t":1793307675,"ok":true,"five_hour":7.0,"seven_day":57.0,"scoped":{"Fable":48},"five_hour_resets_at":1793311200,"seven_day_resets_at":1793422800}},
     {"source": "71603731", "file": "data/71603731.jsonl", "samples": 3113, "latest": {"source":"71603731","t":1793459405,"ok":true,"five_hour":15.0,"seven_day":12.0,"scoped":{"Fable":11},"five_hour_resets_at":1793470200,"seven_day_resets_at":1794027600}},
