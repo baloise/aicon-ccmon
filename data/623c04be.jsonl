@@ -5943,3 +5943,4 @@
 {"t":1794293973,"five_hour":0.0,"seven_day":20.0,"scoped":{"Fable":21},"ok":true}
 {"t":1794294275,"five_hour":6.0,"seven_day":21.0,"scoped":{"Fable":22},"ok":true}
 {"t":1794294461,"five_hour":7.0,"seven_day":21.0,"scoped":{"Fable":22},"ok":true}
+{"t":1794328970,"five_hour":null,"seven_day":null,"scoped":{},"ok":false}
