@@ -3851,3 +3851,6 @@
 {"t":1794326201,"five_hour":29.0,"seven_day":29.0,"scoped":{"Fable":23},"ok":true}
 {"t":1794326531,"five_hour":29.0,"seven_day":29.0,"scoped":{"Fable":23},"ok":true}
 {"t":1794326835,"five_hour":29.0,"seven_day":29.0,"scoped":{"Fable":23},"ok":true}
+{"t":1794378747,"five_hour":0.0,"seven_day":30.0,"scoped":{"Fable":25},"ok":true}
+{"t":1794379069,"five_hour":1.0,"seven_day":31.0,"scoped":{"Fable":25},"ok":true}
+{"t":1794379379,"five_hour":2.0,"seven_day":31.0,"scoped":{"Fable":25},"ok":true}
