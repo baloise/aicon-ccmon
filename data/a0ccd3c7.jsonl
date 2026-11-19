@@ -158,3 +158,6 @@
 {"t":1794987064,"five_hour":null,"seven_day":null,"scoped":{},"ok":false}
 {"t":1795056474,"five_hour":null,"seven_day":null,"scoped":{},"ok":false}
 {"t":1795056778,"five_hour":null,"seven_day":null,"scoped":{},"ok":false}
+{"t":1795057080,"five_hour":0.0,"seven_day":62.0,"scoped":{"Fable":53},"ok":true}
+{"t":1795057383,"five_hour":0.0,"seven_day":62.0,"scoped":{"Fable":53},"ok":true}
+{"t":1795057691,"five_hour":0.0,"seven_day":62.0,"scoped":{"Fable":53},"ok":true}
