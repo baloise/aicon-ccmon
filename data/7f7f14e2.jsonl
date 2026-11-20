@@ -2662,3 +2662,6 @@
 {"t":1795105042,"five_hour":50,"seven_day":74,"scoped":{"Fable":67},"ok":true}
 {"t":1795105372,"five_hour":55,"seven_day":75,"scoped":{"Fable":69},"ok":true}
 {"t":1795105702,"five_hour":57,"seven_day":75,"scoped":{"Fable":69},"ok":true}
+{"t":1795161469,"five_hour":null,"seven_day":null,"scoped":{},"ok":false}
+{"t":1795161799,"five_hour":2,"seven_day":77,"scoped":{"Fable":72},"ok":true}
+{"t":1795162129,"five_hour":2,"seven_day":77,"scoped":{"Fable":72},"ok":true}
