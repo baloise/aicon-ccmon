@@ -6522,3 +6522,6 @@
 {"t":1795889612,"five_hour":null,"seven_day":null,"scoped":{},"ok":false}
 {"t":1795889912,"five_hour":null,"seven_day":null,"scoped":{},"ok":false}
 {"t":1795890212,"five_hour":0.0,"seven_day":0.0,"scoped":{"Fable":0},"ok":true}
+{"t":1795890513,"five_hour":0.0,"seven_day":0.0,"scoped":{"Fable":0},"ok":true}
+{"t":1795890813,"five_hour":2.0,"seven_day":0.0,"scoped":{"Fable":0},"ok":true}
+{"t":1795891114,"five_hour":3.0,"seven_day":0.0,"scoped":{"Fable":0},"ok":true}
